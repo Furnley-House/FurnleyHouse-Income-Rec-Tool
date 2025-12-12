@@ -6,17 +6,19 @@ const generateId = () => Math.random().toString(36).substring(2, 11);
 // Provider names
 const providers = ['Aegon', 'Aviva', 'Legal & General', 'Standard Life', 'Scottish Widows'];
 
-// Client names
+// Client names (individual people, not companies)
 const clientNames = [
-  'Harrison Wealth Solutions', 'Cambridge Pensions Ltd', 'Norfolk Investment Trust',
-  'Brighton Capital Partners', 'Yorkshire Fund Managers', 'Thames Valley Investments',
-  'Edinburgh Financial Services', 'Manchester Wealth Advisory', 'Bristol Asset Management',
-  'Leeds Investment Group', 'Southampton Capital', 'Birmingham Pension Trustees',
-  'Nottingham Financial Planning', 'Liverpool Wealth Management', 'Cardiff Investment Services',
-  'Glasgow Portfolio Advisors', 'Oxford Retirement Solutions', 'Plymouth Asset Trustees',
-  'Derby Investment Partners', 'Sheffield Pension Services', 'Coventry Capital Group',
-  'Leicester Fund Management', 'Stoke Financial Advisory', 'Wolverhampton Investments',
-  'Hull Pension Trustees', 'Reading Wealth Solutions', 'Preston Asset Services'
+  'Mr J Harrison', 'Mrs S Cambridge', 'Mr & Mrs R Norfolk',
+  'Mr P Brighton', 'Ms K Yorkshire', 'Mr & Mrs D Thames',
+  'Mr I Derbyshire', 'Mr E Smith and Mrs T Smith', 'Mrs L Bristol',
+  'Mr A Leeds', 'Ms R Southampton', 'Mr & Mrs W Birmingham',
+  'Mr N Nottingham', 'Mrs J Liverpool', 'Mr C Cardiff',
+  'Ms F Glasgow', 'Mr & Mrs H Oxford', 'Mr P Plymouth',
+  'Mrs M Derby', 'Mr S Sheffield', 'Ms A Coventry',
+  'Mr & Mrs B Leicester', 'Mr T Stoke', 'Mrs K Wolverhampton',
+  'Mr G Hull', 'Ms D Reading', 'Mr & Mrs L Preston',
+  'Mr R Henderson', 'Mrs V Mitchell', 'Mr & Mrs J Thompson',
+  'Ms C Anderson', 'Mr D Walker', 'Mrs P Robinson'
 ];
 
 // Fee types
