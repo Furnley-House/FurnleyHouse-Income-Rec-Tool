@@ -1,5 +1,13 @@
 // Payment Reconciliation System Types
 
+export interface PaymentLineItem {
+  id: string;
+  clientName: string;
+  planReference: string;
+  amount: number;
+  description: string;
+}
+
 export interface Payment {
   id: string;
   providerName: string;
@@ -15,6 +23,7 @@ export interface Payment {
   notes: string;
   reconciledAt?: string;
   reconciledBy?: string;
+  lineItems: PaymentLineItem[];
 }
 
 export interface Expectation {
@@ -24,6 +33,7 @@ export interface Expectation {
   expectedAmount: number;
   calculationDate: string;
   fundReference: string;
+  feeCategory: 'initial' | 'ongoing';
   feeType: 'management' | 'performance' | 'advisory' | 'custody';
   description: string;
   providerName: string;
