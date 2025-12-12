@@ -1,4 +1,4 @@
-import { Payment, Expectation, Match } from '@/types/reconciliation';
+import { Payment, Expectation, Match, PaymentLineItem } from '@/types/reconciliation';
 
 // Generate a unique ID
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -24,6 +24,9 @@ const feeTypes: Array<'management' | 'performance' | 'advisory' | 'custody'> = [
   'management', 'performance', 'advisory', 'custody'
 ];
 
+// Fee categories
+const feeCategories: Array<'initial' | 'ongoing'> = ['initial', 'ongoing'];
+
 // Generate random amount between min and max
 const randomAmount = (min: number, max: number) => 
   Math.round((Math.random() * (max - min) + min) * 100) / 100;
@@ -35,9 +38,10 @@ const randomDate = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
-// Generate expectations for a provider
-const generateExpectations = (provider: string, count: number): Expectation[] => {
+// Generate expectations for a provider (and corresponding line items)
+const generateExpectationsAndLineItems = (provider: string, count: number): { expectations: Expectation[], lineItems: PaymentLineItem[] } => {
   const expectations: Expectation[] = [];
+  const lineItems: PaymentLineItem[] = [];
   const usedClients = new Set<string>();
   
   for (let i = 0; i < count; i++) {
@@ -49,25 +53,43 @@ const generateExpectations = (provider: string, count: number): Expectation[] =>
     usedClients.add(clientName);
     
     const expectedAmount = randomAmount(500, 15000);
+    const planReference = `PL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const feeCategory = feeCategories[Math.floor(Math.random() * feeCategories.length)];
+    const feeType = feeTypes[Math.floor(Math.random() * feeTypes.length)];
+    
+    // Generate line item with slight variance from expected (simulating provider paying slightly different)
+    const varianceFactor = 1 + (Math.random() - 0.5) * 0.04; // ±2% variance
+    const lineItemAmount = Math.round(expectedAmount * varianceFactor * 100) / 100;
+    
+    const expectationId = generateId();
     
     expectations.push({
-      id: generateId(),
+      id: expectationId,
       clientName,
-      planReference: `PL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+      planReference,
       expectedAmount,
       calculationDate: randomDate(),
       fundReference: `FND-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      feeType: feeTypes[Math.floor(Math.random() * feeTypes.length)],
-      description: `${feeTypes[Math.floor(Math.random() * feeTypes.length)]} fee for Q4 2024`,
+      feeCategory,
+      feeType,
+      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee for Q4 2024`,
       providerName: provider,
       status: 'unmatched',
       allocatedAmount: 0,
       remainingAmount: expectedAmount,
       matchedToPayments: []
     });
+    
+    lineItems.push({
+      id: generateId(),
+      clientName,
+      planReference,
+      amount: lineItemAmount,
+      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee`
+    });
   }
   
-  return expectations;
+  return { expectations, lineItems };
 };
 
 // Generate payments with related expectations
@@ -77,48 +99,50 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
   const matches: Match[] = [];
   
   // Provider A: Aegon - 3 payments
-  const aegonExpectations1 = generateExpectations('Aegon', 20);
-  const aegonSum1 = aegonExpectations1.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aegon1 = generateExpectationsAndLineItems('Aegon', 20);
+  const aegonSum1 = aegon1.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
     providerName: 'Aegon',
     paymentReference: 'AEG-2024-12-001',
-    amount: Math.round(aegonSum1 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    amount: Math.round(aegonSum1 * 100) / 100,
     paymentDate: '2024-12-05',
     bankReference: 'BACS-4521789',
     statementItemCount: 20,
     status: 'unreconciled',
     reconciledAmount: 0,
-    remainingAmount: Math.round(aegonSum1 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    remainingAmount: Math.round(aegonSum1 * 100) / 100,
     matchedExpectationIds: [],
-    notes: ''
+    notes: '',
+    lineItems: aegon1.lineItems
   });
-  allExpectations.push(...aegonExpectations1);
+  allExpectations.push(...aegon1.expectations);
   
-  const aegonExpectations2 = generateExpectations('Aegon', 15);
-  const aegonSum2 = aegonExpectations2.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aegon2 = generateExpectationsAndLineItems('Aegon', 15);
+  const aegonSum2 = aegon2.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
     providerName: 'Aegon',
     paymentReference: 'AEG-2024-12-002',
-    amount: Math.round(aegonSum2 * (1 + (Math.random() - 0.5) * 0.03) * 100) / 100,
+    amount: Math.round(aegonSum2 * 100) / 100,
     paymentDate: '2024-12-12',
     bankReference: 'BACS-4521956',
     statementItemCount: 15,
     status: 'unreconciled',
     reconciledAmount: 0,
-    remainingAmount: Math.round(aegonSum2 * (1 + (Math.random() - 0.5) * 0.03) * 100) / 100,
+    remainingAmount: Math.round(aegonSum2 * 100) / 100,
     matchedExpectationIds: [],
-    notes: ''
+    notes: '',
+    lineItems: aegon2.lineItems
   });
-  allExpectations.push(...aegonExpectations2);
+  allExpectations.push(...aegon2.expectations);
   
-  const aegonExpectations3 = generateExpectations('Aegon', 8);
-  const aegonSum3 = aegonExpectations3.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aegon3 = generateExpectationsAndLineItems('Aegon', 8);
+  const aegonSum3 = aegon3.lineItems.reduce((sum, e) => sum + e.amount, 0);
   // Mark as reconciled
-  aegonExpectations3.forEach(e => {
+  aegon3.expectations.forEach((e, idx) => {
     e.status = 'matched';
-    e.allocatedAmount = e.expectedAmount;
+    e.allocatedAmount = aegon3.lineItems[idx].amount;
     e.remainingAmount = 0;
   });
   payments.push({
@@ -132,83 +156,86 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     status: 'reconciled',
     reconciledAmount: Math.round(aegonSum3 * 100) / 100,
     remainingAmount: 0,
-    matchedExpectationIds: aegonExpectations3.map(e => e.id),
+    matchedExpectationIds: aegon3.expectations.map(e => e.id),
     notes: 'Monthly charges reconciled',
     reconciledAt: '2024-12-02T10:30:00Z',
-    reconciledBy: 'John Smith'
+    reconciledBy: 'John Smith',
+    lineItems: aegon3.lineItems
   });
-  allExpectations.push(...aegonExpectations3);
+  allExpectations.push(...aegon3.expectations);
   
   // Provider B: Aviva - 4 payments
-  const avivaExpectations1 = generateExpectations('Aviva', 35);
-  const avivaSum1 = avivaExpectations1.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aviva1 = generateExpectationsAndLineItems('Aviva', 35);
+  const avivaSum1 = aviva1.lineItems.reduce((sum, e) => sum + e.amount, 0);
   // Mark some as matched for in_progress
   const matchedCount = 17;
   let matchedAmount = 0;
   for (let i = 0; i < matchedCount; i++) {
-    avivaExpectations1[i].status = 'matched';
-    avivaExpectations1[i].allocatedAmount = avivaExpectations1[i].expectedAmount;
-    avivaExpectations1[i].remainingAmount = 0;
-    matchedAmount += avivaExpectations1[i].expectedAmount;
+    aviva1.expectations[i].status = 'matched';
+    aviva1.expectations[i].allocatedAmount = aviva1.lineItems[i].amount;
+    aviva1.expectations[i].remainingAmount = 0;
+    matchedAmount += aviva1.lineItems[i].amount;
   }
-  const avivaPayment1Id = generateId();
   payments.push({
-    id: avivaPayment1Id,
+    id: generateId(),
     providerName: 'Aviva',
     paymentReference: 'AVV-2024-12-001',
-    amount: Math.round(avivaSum1 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    amount: Math.round(avivaSum1 * 100) / 100,
     paymentDate: '2024-12-08',
     bankReference: 'BACS-4522134',
     statementItemCount: 35,
     status: 'in_progress',
     reconciledAmount: Math.round(matchedAmount * 100) / 100,
-    remainingAmount: Math.round((avivaSum1 - matchedAmount) * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
-    matchedExpectationIds: avivaExpectations1.slice(0, matchedCount).map(e => e.id),
-    notes: 'In progress - some items matched'
+    remainingAmount: Math.round((avivaSum1 - matchedAmount) * 100) / 100,
+    matchedExpectationIds: aviva1.expectations.slice(0, matchedCount).map(e => e.id),
+    notes: 'In progress - some items matched',
+    lineItems: aviva1.lineItems
   });
-  allExpectations.push(...avivaExpectations1);
+  allExpectations.push(...aviva1.expectations);
   
-  const avivaExpectations2 = generateExpectations('Aviva', 25);
-  const avivaSum2 = avivaExpectations2.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aviva2 = generateExpectationsAndLineItems('Aviva', 25);
+  const avivaSum2 = aviva2.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
     providerName: 'Aviva',
     paymentReference: 'AVV-2024-12-002',
-    amount: Math.round(avivaSum2 * (1 + (Math.random() - 0.5) * 0.025) * 100) / 100,
+    amount: Math.round(avivaSum2 * 100) / 100,
     paymentDate: '2024-12-10',
     bankReference: 'BACS-4522345',
     statementItemCount: 25,
     status: 'unreconciled',
     reconciledAmount: 0,
-    remainingAmount: Math.round(avivaSum2 * (1 + (Math.random() - 0.5) * 0.025) * 100) / 100,
+    remainingAmount: Math.round(avivaSum2 * 100) / 100,
     matchedExpectationIds: [],
-    notes: ''
+    notes: '',
+    lineItems: aviva2.lineItems
   });
-  allExpectations.push(...avivaExpectations2);
+  allExpectations.push(...aviva2.expectations);
   
-  const avivaExpectations3 = generateExpectations('Aviva', 18);
-  const avivaSum3 = avivaExpectations3.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const aviva3 = generateExpectationsAndLineItems('Aviva', 18);
+  const avivaSum3 = aviva3.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
     providerName: 'Aviva',
     paymentReference: 'AVV-2024-12-003',
-    amount: Math.round(avivaSum3 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    amount: Math.round(avivaSum3 * 100) / 100,
     paymentDate: '2024-12-06',
     bankReference: 'BACS-4522012',
     statementItemCount: 18,
     status: 'unreconciled',
     reconciledAmount: 0,
-    remainingAmount: Math.round(avivaSum3 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    remainingAmount: Math.round(avivaSum3 * 100) / 100,
     matchedExpectationIds: [],
-    notes: ''
+    notes: '',
+    lineItems: aviva3.lineItems
   });
-  allExpectations.push(...avivaExpectations3);
+  allExpectations.push(...aviva3.expectations);
   
-  const avivaExpectations4 = generateExpectations('Aviva', 12);
-  const avivaSum4 = avivaExpectations4.reduce((sum, e) => sum + e.expectedAmount, 0);
-  avivaExpectations4.forEach(e => {
+  const aviva4 = generateExpectationsAndLineItems('Aviva', 12);
+  const avivaSum4 = aviva4.lineItems.reduce((sum, e) => sum + e.amount, 0);
+  aviva4.expectations.forEach((e, idx) => {
     e.status = 'matched';
-    e.allocatedAmount = e.expectedAmount;
+    e.allocatedAmount = aviva4.lineItems[idx].amount;
     e.remainingAmount = 0;
   });
   payments.push({
@@ -222,77 +249,81 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     status: 'reconciled',
     reconciledAmount: Math.round(avivaSum4 * 100) / 100,
     remainingAmount: 0,
-    matchedExpectationIds: avivaExpectations4.map(e => e.id),
+    matchedExpectationIds: aviva4.expectations.map(e => e.id),
     notes: 'Fully reconciled',
     reconciledAt: '2024-12-04T14:20:00Z',
-    reconciledBy: 'Sarah Johnson'
+    reconciledBy: 'Sarah Johnson',
+    lineItems: aviva4.lineItems
   });
-  allExpectations.push(...avivaExpectations4);
+  allExpectations.push(...aviva4.expectations);
   
   // Provider C: Legal & General - 2 large payments
-  const lgExpectations1 = generateExpectations('Legal & General', 45);
-  const lgSum1 = lgExpectations1.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const lg1 = generateExpectationsAndLineItems('Legal & General', 45);
+  const lgSum1 = lg1.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
     providerName: 'Legal & General',
     paymentReference: 'LG-2024-12-001',
-    amount: Math.round(lgSum1 * (1 + (Math.random() - 0.5) * 0.015) * 100) / 100,
+    amount: Math.round(lgSum1 * 100) / 100,
     paymentDate: '2024-12-09',
     bankReference: 'CHAPS-8891234',
     statementItemCount: 45,
     status: 'unreconciled',
     reconciledAmount: 0,
-    remainingAmount: Math.round(lgSum1 * (1 + (Math.random() - 0.5) * 0.015) * 100) / 100,
+    remainingAmount: Math.round(lgSum1 * 100) / 100,
     matchedExpectationIds: [],
-    notes: ''
+    notes: '',
+    lineItems: lg1.lineItems
   });
-  allExpectations.push(...lgExpectations1);
+  allExpectations.push(...lg1.expectations);
   
-  const lgExpectations2 = generateExpectations('Legal & General', 38);
-  const lgSum2 = lgExpectations2.reduce((sum, e) => sum + e.expectedAmount, 0);
+  const lg2 = generateExpectationsAndLineItems('Legal & General', 38);
+  const lgSum2 = lg2.lineItems.reduce((sum, e) => sum + e.amount, 0);
   const lgMatchedCount = 12;
   let lgMatchedAmount = 0;
   for (let i = 0; i < lgMatchedCount; i++) {
-    lgExpectations2[i].status = 'matched';
-    lgExpectations2[i].allocatedAmount = lgExpectations2[i].expectedAmount;
-    lgExpectations2[i].remainingAmount = 0;
-    lgMatchedAmount += lgExpectations2[i].expectedAmount;
+    lg2.expectations[i].status = 'matched';
+    lg2.expectations[i].allocatedAmount = lg2.lineItems[i].amount;
+    lg2.expectations[i].remainingAmount = 0;
+    lgMatchedAmount += lg2.lineItems[i].amount;
   }
   payments.push({
     id: generateId(),
     providerName: 'Legal & General',
     paymentReference: 'LG-2024-12-002',
-    amount: Math.round(lgSum2 * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+    amount: Math.round(lgSum2 * 100) / 100,
     paymentDate: '2024-12-07',
     bankReference: 'CHAPS-8890987',
     statementItemCount: 38,
     status: 'in_progress',
     reconciledAmount: Math.round(lgMatchedAmount * 100) / 100,
-    remainingAmount: Math.round((lgSum2 - lgMatchedAmount) * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
-    matchedExpectationIds: lgExpectations2.slice(0, lgMatchedCount).map(e => e.id),
-    notes: 'Partially matched'
+    remainingAmount: Math.round((lgSum2 - lgMatchedAmount) * 100) / 100,
+    matchedExpectationIds: lg2.expectations.slice(0, lgMatchedCount).map(e => e.id),
+    notes: 'Partially matched',
+    lineItems: lg2.lineItems
   });
-  allExpectations.push(...lgExpectations2);
+  allExpectations.push(...lg2.expectations);
   
   // Smaller providers
   ['Standard Life', 'Scottish Widows'].forEach(provider => {
-    const expectations = generateExpectations(provider, Math.floor(Math.random() * 10) + 8);
-    const sum = expectations.reduce((s, e) => s + e.expectedAmount, 0);
+    const data = generateExpectationsAndLineItems(provider, Math.floor(Math.random() * 10) + 8);
+    const sum = data.lineItems.reduce((s, e) => s + e.amount, 0);
     payments.push({
       id: generateId(),
       providerName: provider,
       paymentReference: `${provider.substring(0, 2).toUpperCase()}-2024-12-001`,
-      amount: Math.round(sum * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+      amount: Math.round(sum * 100) / 100,
       paymentDate: randomDate(),
       bankReference: `BACS-${Math.floor(Math.random() * 9000000) + 1000000}`,
-      statementItemCount: expectations.length,
+      statementItemCount: data.expectations.length,
       status: 'unreconciled',
       reconciledAmount: 0,
-      remainingAmount: Math.round(sum * (1 + (Math.random() - 0.5) * 0.02) * 100) / 100,
+      remainingAmount: Math.round(sum * 100) / 100,
       matchedExpectationIds: [],
-      notes: ''
+      notes: '',
+      lineItems: data.lineItems
     });
-    allExpectations.push(...expectations);
+    allExpectations.push(...data.expectations);
   });
   
   // Sort payments by date (newest first)

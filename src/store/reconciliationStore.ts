@@ -130,9 +130,27 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     if (!payment) return;
     
     const selectedExpectations = expectations.filter(e => pendingMatchExpectationIds.includes(e.id));
-    const matchedAmount = selectedExpectations.reduce((sum, e) => sum + e.expectedAmount, 0);
-    const variance = matchedAmount - (payment.remainingAmount || payment.amount);
-    const variancePercentage = (variance / (payment.remainingAmount || payment.amount)) * 100;
+    
+    // Try to match expectations to line items by plan reference to get actual paid amounts
+    const allocationDetails: Array<{ expectationId: string; expectedAmount: number; allocatedAmount: number }> = [];
+    
+    for (const exp of selectedExpectations) {
+      // Find matching line item by plan reference
+      const matchingLineItem = payment.lineItems.find(li => li.planReference === exp.planReference);
+      const allocatedAmount = matchingLineItem?.amount ?? exp.expectedAmount;
+      
+      allocationDetails.push({
+        expectationId: exp.id,
+        expectedAmount: exp.expectedAmount,
+        allocatedAmount
+      });
+    }
+    
+    const totalExpected = allocationDetails.reduce((sum, d) => sum + d.expectedAmount, 0);
+    const totalAllocated = allocationDetails.reduce((sum, d) => sum + d.allocatedAmount, 0);
+    
+    const variance = totalAllocated - totalExpected;
+    const variancePercentage = totalExpected > 0 ? (variance / totalExpected) * 100 : 0;
     
     // Determine match quality
     let quality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
@@ -146,7 +164,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       id: Math.random().toString(36).substring(2, 11),
       paymentId: selectedPaymentId,
       expectationIds: pendingMatchExpectationIds,
-      matchedAmount,
+      matchedAmount: totalAllocated,
       variance,
       variancePercentage,
       matchType: pendingMatchExpectationIds.length > 1 ? 'multi' : 'full',
@@ -156,23 +174,24 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       matchedBy: 'Current User',
       matchedAt: new Date().toISOString(),
       confirmed: true,
-      details: selectedExpectations.map(e => ({
-        expectationId: e.id,
-        amountAllocated: e.expectedAmount
+      details: allocationDetails.map(d => ({
+        expectationId: d.expectationId,
+        amountAllocated: d.allocatedAmount
       }))
     };
     
-    // Update expectations
+    // Update expectations with allocated amounts
     const updatedExpectations = expectations.map(e => {
-      if (pendingMatchExpectationIds.includes(e.id)) {
+      const allocation = allocationDetails.find(d => d.expectationId === e.id);
+      if (allocation) {
         return {
           ...e,
           status: 'matched' as const,
-          allocatedAmount: e.expectedAmount,
+          allocatedAmount: allocation.allocatedAmount,
           remainingAmount: 0,
           matchedToPayments: [...e.matchedToPayments, {
             paymentId: selectedPaymentId,
-            amount: e.expectedAmount,
+            amount: allocation.allocatedAmount,
             matchId: newMatch.id
           }]
         };
@@ -181,7 +200,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     });
     
     // Update payment
-    const newReconciledAmount = payment.reconciledAmount + matchedAmount;
+    const newReconciledAmount = payment.reconciledAmount + totalAllocated;
     const newRemainingAmount = payment.amount - newReconciledAmount;
     const newStatus = Math.abs(newRemainingAmount) < 1 ? 'reconciled' : 'in_progress';
     

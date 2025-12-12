@@ -1,18 +1,18 @@
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Search, 
   User,
-  Calendar,
-  Tag,
+  FileText,
   CheckCircle2,
   Circle,
   GripVertical,
-  Filter
+  ArrowRight,
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import {
   Select,
@@ -45,31 +45,14 @@ export function ExpectationGrid() {
     }).format(amount);
   };
   
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short'
-    });
+  const getFeeCategoryLabel = (category: string) => {
+    return category === 'initial' ? 'Initial' : 'Ongoing';
   };
   
-  const getFeeTypeLabel = (feeType: string) => {
-    const labels: Record<string, string> = {
-      management: 'Management',
-      performance: 'Performance',
-      advisory: 'Advisory',
-      custody: 'Custody'
-    };
-    return labels[feeType] || feeType;
-  };
-  
-  const getFeeTypeColor = (feeType: string) => {
-    const colors: Record<string, string> = {
-      management: 'bg-primary/10 text-primary border-primary/20',
-      performance: 'bg-success/10 text-success border-success/20',
-      advisory: 'bg-warning/10 text-warning border-warning/20',
-      custody: 'bg-muted text-muted-foreground border-muted-foreground/20'
-    };
-    return colors[feeType] || 'bg-muted text-muted-foreground';
+  const getFeeCategoryColor = (category: string) => {
+    return category === 'initial' 
+      ? 'bg-warning/10 text-warning border-warning/30' 
+      : 'bg-primary/10 text-primary border-primary/30';
   };
   
   // Count by status
@@ -135,6 +118,11 @@ export function ExpectationGrid() {
             const isSelected = pendingMatchExpectationIds.includes(expectation.id);
             const isMatched = expectation.status === 'matched';
             const isMatchedToThisPayment = payment?.matchedExpectationIds.includes(expectation.id);
+            const hasVariance = isMatched && expectation.allocatedAmount !== expectation.expectedAmount;
+            const varianceAmount = expectation.allocatedAmount - expectation.expectedAmount;
+            const variancePercent = expectation.expectedAmount > 0 
+              ? (varianceAmount / expectation.expectedAmount) * 100 
+              : 0;
             
             return (
               <div
@@ -177,23 +165,53 @@ export function ExpectationGrid() {
                       </span>
                     </div>
                     
-                    {/* Amount */}
-                    <p className="text-xl font-bold text-foreground tabular-nums mb-2">
-                      {formatCurrency(expectation.expectedAmount)}
-                    </p>
+                    {/* Plan Reference */}
+                    <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                      <FileText className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{expectation.planReference}</span>
+                    </div>
                     
-                    {/* Details */}
+                    {/* Amount Display */}
+                    {isMatched && isMatchedToThisPayment ? (
+                      <div className="mb-2">
+                        {/* Show expected vs allocated when matched */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground line-through">
+                            {formatCurrency(expectation.expectedAmount)}
+                          </span>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xl font-bold text-foreground tabular-nums">
+                            {formatCurrency(expectation.allocatedAmount)}
+                          </span>
+                        </div>
+                        {/* Variance indicator */}
+                        {hasVariance && (
+                          <div className={cn(
+                            "flex items-center gap-1 text-xs mt-1",
+                            varianceAmount > 0 ? "text-success" : "text-danger"
+                          )}>
+                            {varianceAmount > 0 ? (
+                              <TrendingUp className="h-3 w-3" />
+                            ) : (
+                              <TrendingDown className="h-3 w-3" />
+                            )}
+                            <span>
+                              {varianceAmount > 0 ? '+' : ''}{formatCurrency(varianceAmount)} ({variancePercent.toFixed(1)}%)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xl font-bold text-foreground tabular-nums mb-2">
+                        {formatCurrency(expectation.expectedAmount)}
+                      </p>
+                    )}
+                    
+                    {/* Fee Category Badge */}
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <Badge variant="outline" className={cn("text-xs", getFeeTypeColor(expectation.feeType))}>
-                        {getFeeTypeLabel(expectation.feeType)}
+                      <Badge variant="outline" className={cn("text-xs font-medium", getFeeCategoryColor(expectation.feeCategory))}>
+                        {getFeeCategoryLabel(expectation.feeCategory)}
                       </Badge>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(expectation.calculationDate)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {expectation.planReference}
-                      </span>
                     </div>
                   </div>
                   
