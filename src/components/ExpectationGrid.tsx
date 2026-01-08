@@ -6,13 +6,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Search, 
   User,
-  FileText,
   CheckCircle2,
   Circle,
-  GripVertical,
-  ArrowRight,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Target
 } from 'lucide-react';
 import {
   Select,
@@ -60,35 +58,39 @@ export function ExpectationGrid() {
   const matchedCount = expectations.filter(e => e.status === 'matched').length;
   
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-card">
       {/* Header */}
-      <div className="p-4 border-b border-border bg-card/50 space-y-3">
+      <div className="p-4 border-b border-border bg-secondary/30 space-y-3">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-foreground">Expectations</h3>
-            <p className="text-sm text-muted-foreground">
-              {payment?.providerName} • {expectations.length} items
-            </p>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-secondary flex items-center justify-center">
+              <Target className="h-4 w-4 text-secondary-foreground" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground text-sm">Expected Fees</h3>
+              <p className="text-xs text-muted-foreground">Outstanding for this provider</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Badge variant="outline" className="bg-muted">
-              {unmatchedCount} unmatched
-            </Badge>
-            <Badge variant="outline" className="bg-success-light text-success border-success/30">
-              {matchedCount} matched
-            </Badge>
-          </div>
+        </div>
+        
+        <div className="flex items-center gap-2 text-xs">
+          <Badge variant="outline" className="bg-muted">
+            {unmatchedCount} unmatched
+          </Badge>
+          <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+            {matchedCount} matched
+          </Badge>
         </div>
         
         {/* Filters */}
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="Search by client or plan..."
+              placeholder="Search expectations..."
               value={expectationFilters.searchTerm}
               onChange={(e) => setExpectationFilters({ searchTerm: e.target.value })}
-              className="pl-9 h-9"
+              className="pl-9 h-8 text-sm"
             />
           </div>
           
@@ -98,13 +100,12 @@ export function ExpectationGrid() {
               setExpectationFilters({ status: value })
             }
           >
-            <SelectTrigger className="w-40 h-9">
+            <SelectTrigger className="w-32 h-8 text-xs">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="unmatched">Unmatched</SelectItem>
-              <SelectItem value="partial">Partial</SelectItem>
               <SelectItem value="matched">Matched</SelectItem>
             </SelectContent>
           </Select>
@@ -128,12 +129,11 @@ export function ExpectationGrid() {
               <div
                 key={expectation.id}
                 className={cn(
-                  "px-4 py-2.5 flex items-center gap-4 transition-all duration-150 cursor-pointer",
-                  "hover:bg-muted/50",
-                  isMatched && isMatchedToThisPayment && "bg-success-light",
-                  isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-60",
-                  !isMatched && isSelected && "bg-primary/5",
-                  !isMatched && !isSelected && "bg-background"
+                  "px-4 py-3 transition-all duration-150",
+                  isMatched && isMatchedToThisPayment && "bg-success/5",
+                  isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-50",
+                  !isMatched && isSelected && "bg-primary/5 ring-1 ring-inset ring-primary/20",
+                  !isMatched && !isSelected && "bg-background hover:bg-muted/30 cursor-pointer"
                 )}
                 onClick={() => {
                   if (!isMatched) {
@@ -141,69 +141,72 @@ export function ExpectationGrid() {
                   }
                 }}
               >
-                {/* Checkbox */}
-                <div className="shrink-0">
-                  {isMatched ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  ) : (
-                    <Checkbox 
-                      checked={isSelected}
-                      onCheckedChange={() => toggleExpectationSelection(expectation.id)}
-                      className="h-4 w-4"
-                    />
-                  )}
-                </div>
-                
-                {/* Client Name */}
-                <div className="min-w-0 w-40 shrink-0">
-                  <span className="font-medium text-foreground text-sm truncate block">
-                    {expectation.clientName}
-                  </span>
-                </div>
-                
-                {/* Plan Reference */}
-                <div className="min-w-0 flex-1 text-sm text-muted-foreground truncate">
-                  {expectation.planReference}
-                </div>
-                
-                {/* Fee Category */}
-                <Badge variant="outline" className={cn("text-xs font-medium shrink-0", getFeeCategoryColor(expectation.feeCategory))}>
-                  {getFeeCategoryLabel(expectation.feeCategory)}
-                </Badge>
-                
-                {/* Amount */}
-                <div className="text-right shrink-0 w-32">
-                  {isMatched && isMatchedToThisPayment ? (
-                    <div>
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span className="text-xs text-muted-foreground line-through">
-                          {formatCurrency(expectation.expectedAmount)}
-                        </span>
-                        <span className="font-semibold text-sm tabular-nums">
-                          {formatCurrency(expectation.allocatedAmount)}
-                        </span>
-                      </div>
-                      {hasVariance && (
-                        <div className={cn(
-                          "flex items-center justify-end gap-0.5 text-xs",
-                          varianceAmount > 0 ? "text-success" : "text-danger"
-                        )}>
-                          {varianceAmount > 0 ? (
-                            <TrendingUp className="h-3 w-3" />
-                          ) : (
-                            <TrendingDown className="h-3 w-3" />
+                <div className="flex items-start gap-3">
+                  {/* Checkbox */}
+                  <div className="shrink-0 mt-0.5">
+                    {isMatched ? (
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                    ) : (
+                      <Checkbox 
+                        checked={isSelected}
+                        onCheckedChange={() => toggleExpectationSelection(expectation.id)}
+                        className="h-4 w-4"
+                      />
+                    )}
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="font-medium text-foreground text-sm truncate">
+                        {expectation.clientName}
+                      </span>
+                      <Badge variant="outline" className={cn("text-xs h-5 shrink-0", getFeeCategoryColor(expectation.feeCategory))}>
+                        {getFeeCategoryLabel(expectation.feeCategory)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {expectation.planReference}
+                    </p>
+                  </div>
+                  
+                  {/* Amount */}
+                  <div className="text-right shrink-0">
+                    {isMatched && isMatchedToThisPayment ? (
+                      <div>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {hasVariance && (
+                            <span className="text-xs text-muted-foreground line-through">
+                              {formatCurrency(expectation.expectedAmount)}
+                            </span>
                           )}
-                          <span>
-                            {varianceAmount > 0 ? '+' : ''}{variancePercent.toFixed(1)}%
+                          <span className="font-semibold text-sm tabular-nums">
+                            {formatCurrency(expectation.allocatedAmount)}
                           </span>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="font-semibold text-sm tabular-nums">
-                      {formatCurrency(expectation.expectedAmount)}
-                    </span>
-                  )}
+                        {hasVariance && (
+                          <div className={cn(
+                            "flex items-center justify-end gap-0.5 text-xs",
+                            varianceAmount > 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {varianceAmount > 0 ? (
+                              <TrendingUp className="h-3 w-3" />
+                            ) : (
+                              <TrendingDown className="h-3 w-3" />
+                            )}
+                            <span>
+                              {varianceAmount > 0 ? '+' : ''}{variancePercent.toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="font-semibold text-sm tabular-nums">
+                        {formatCurrency(expectation.expectedAmount)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -211,13 +214,23 @@ export function ExpectationGrid() {
           
           {expectations.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-              <Circle className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+              <Circle className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
               <p className="text-sm">No expectations found</p>
               <p className="text-xs mt-1">Try adjusting your filters</p>
             </div>
           )}
         </div>
       </ScrollArea>
+      
+      {/* Footer Summary */}
+      <div className="p-3 border-t border-border bg-muted/30">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Total Expected</span>
+          <span className="font-bold tabular-nums">
+            {formatCurrency(expectations.reduce((sum, e) => sum + e.expectedAmount, 0))}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
