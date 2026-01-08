@@ -111,9 +111,9 @@ export function ExpectationGrid() {
         </div>
       </div>
       
-      {/* Grid */}
+      {/* List */}
       <ScrollArea className="flex-1 scrollbar-thin">
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="divide-y divide-border">
           {expectations.map((expectation) => {
             const isSelected = pendingMatchExpectationIds.includes(expectation.id);
             const isMatched = expectation.status === 'matched';
@@ -128,12 +128,12 @@ export function ExpectationGrid() {
               <div
                 key={expectation.id}
                 className={cn(
-                  "p-4 rounded-lg border transition-all duration-150 cursor-pointer",
-                  "hover:shadow-md",
-                  isMatched && isMatchedToThisPayment && "bg-success-light border-success/30",
-                  isMatched && !isMatchedToThisPayment && "bg-muted/50 border-border opacity-60",
-                  !isMatched && isSelected && "bg-primary/5 border-primary ring-1 ring-primary/30",
-                  !isMatched && !isSelected && "bg-card border-border hover:border-primary/50"
+                  "px-4 py-2.5 flex items-center gap-4 transition-all duration-150 cursor-pointer",
+                  "hover:bg-muted/50",
+                  isMatched && isMatchedToThisPayment && "bg-success-light",
+                  isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-60",
+                  !isMatched && isSelected && "bg-primary/5",
+                  !isMatched && !isSelected && "bg-background"
                 )}
                 onClick={() => {
                   if (!isMatched) {
@@ -141,83 +141,68 @@ export function ExpectationGrid() {
                   }
                 }}
               >
-                <div className="flex items-start gap-3">
-                  {/* Checkbox */}
-                  <div className="mt-0.5">
-                    {isMatched ? (
-                      <CheckCircle2 className="h-5 w-5 text-success" />
-                    ) : (
-                      <Checkbox 
-                        checked={isSelected}
-                        onCheckedChange={() => toggleExpectationSelection(expectation.id)}
-                        className="h-5 w-5"
-                      />
-                    )}
-                  </div>
-                  
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    {/* Client Name */}
-                    <div className="flex items-center gap-2 mb-1">
-                      <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="font-medium text-foreground text-sm truncate">
-                        {expectation.clientName}
-                      </span>
-                    </div>
-                    
-                    {/* Plan Reference */}
-                    <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-                      <FileText className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{expectation.planReference}</span>
-                    </div>
-                    
-                    {/* Amount Display */}
-                    {isMatched && isMatchedToThisPayment ? (
-                      <div className="mb-2">
-                        {/* Show expected vs allocated when matched */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground line-through">
-                            {formatCurrency(expectation.expectedAmount)}
-                          </span>
-                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xl font-bold text-foreground tabular-nums">
-                            {formatCurrency(expectation.allocatedAmount)}
+                {/* Checkbox */}
+                <div className="shrink-0">
+                  {isMatched ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                  ) : (
+                    <Checkbox 
+                      checked={isSelected}
+                      onCheckedChange={() => toggleExpectationSelection(expectation.id)}
+                      className="h-4 w-4"
+                    />
+                  )}
+                </div>
+                
+                {/* Client Name */}
+                <div className="min-w-0 w-40 shrink-0">
+                  <span className="font-medium text-foreground text-sm truncate block">
+                    {expectation.clientName}
+                  </span>
+                </div>
+                
+                {/* Plan Reference */}
+                <div className="min-w-0 flex-1 text-sm text-muted-foreground truncate">
+                  {expectation.planReference}
+                </div>
+                
+                {/* Fee Category */}
+                <Badge variant="outline" className={cn("text-xs font-medium shrink-0", getFeeCategoryColor(expectation.feeCategory))}>
+                  {getFeeCategoryLabel(expectation.feeCategory)}
+                </Badge>
+                
+                {/* Amount */}
+                <div className="text-right shrink-0 w-32">
+                  {isMatched && isMatchedToThisPayment ? (
+                    <div>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="text-xs text-muted-foreground line-through">
+                          {formatCurrency(expectation.expectedAmount)}
+                        </span>
+                        <span className="font-semibold text-sm tabular-nums">
+                          {formatCurrency(expectation.allocatedAmount)}
+                        </span>
+                      </div>
+                      {hasVariance && (
+                        <div className={cn(
+                          "flex items-center justify-end gap-0.5 text-xs",
+                          varianceAmount > 0 ? "text-success" : "text-danger"
+                        )}>
+                          {varianceAmount > 0 ? (
+                            <TrendingUp className="h-3 w-3" />
+                          ) : (
+                            <TrendingDown className="h-3 w-3" />
+                          )}
+                          <span>
+                            {varianceAmount > 0 ? '+' : ''}{variancePercent.toFixed(1)}%
                           </span>
                         </div>
-                        {/* Variance indicator */}
-                        {hasVariance && (
-                          <div className={cn(
-                            "flex items-center gap-1 text-xs mt-1",
-                            varianceAmount > 0 ? "text-success" : "text-danger"
-                          )}>
-                            {varianceAmount > 0 ? (
-                              <TrendingUp className="h-3 w-3" />
-                            ) : (
-                              <TrendingDown className="h-3 w-3" />
-                            )}
-                            <span>
-                              {varianceAmount > 0 ? '+' : ''}{formatCurrency(varianceAmount)} ({variancePercent.toFixed(1)}%)
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xl font-bold text-foreground tabular-nums mb-2">
-                        {formatCurrency(expectation.expectedAmount)}
-                      </p>
-                    )}
-                    
-                    {/* Fee Category Badge */}
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <Badge variant="outline" className={cn("text-xs font-medium", getFeeCategoryColor(expectation.feeCategory))}>
-                        {getFeeCategoryLabel(expectation.feeCategory)}
-                      </Badge>
+                      )}
                     </div>
-                  </div>
-                  
-                  {/* Drag Handle */}
-                  {!isMatched && (
-                    <GripVertical className="h-5 w-5 text-muted-foreground/50" />
+                  ) : (
+                    <span className="font-semibold text-sm tabular-nums">
+                      {formatCurrency(expectation.expectedAmount)}
+                    </span>
                   )}
                 </div>
               </div>
@@ -225,7 +210,7 @@ export function ExpectationGrid() {
           })}
           
           {expectations.length === 0 && (
-            <div className="col-span-full text-center py-12 text-muted-foreground">
+            <div className="text-center py-12 text-muted-foreground">
               <Circle className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
               <p className="text-sm">No expectations found</p>
               <p className="text-xs mt-1">Try adjusting your filters</p>
