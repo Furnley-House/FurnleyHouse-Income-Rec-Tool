@@ -56,44 +56,34 @@ export function StatementItemList() {
   
   return (
     <div className="h-full flex flex-col border-r border-border bg-card">
-      {/* Header */}
-      <div className="p-4 border-b border-border bg-primary/5 space-y-3">
-        <div className="flex items-center justify-between">
+      {/* Compact Header */}
+      <div className="px-3 py-2 border-b border-border bg-primary/5">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="h-4 w-4 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground text-sm">Statement Items</h3>
-              <p className="text-xs text-muted-foreground">From provider payment</p>
-            </div>
+            <FileText className="h-4 w-4 text-primary" />
+            <span className="font-semibold text-foreground text-sm">Statement Items</span>
+            <Badge variant="outline" className="bg-muted text-xs h-5">
+              {unmatchedCount} unmatched
+            </Badge>
+            <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs h-5">
+              {matchedCount} matched
+            </Badge>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2 text-xs">
-          <Badge variant="outline" className="bg-muted">
-            {unmatchedCount} unmatched
-          </Badge>
-          <Badge variant="outline" className="bg-success/10 text-success border-success/30">
-            {matchedCount} matched
-          </Badge>
-        </div>
-        
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search statement..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 h-8 text-sm"
-          />
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 h-6 text-xs w-32"
+            />
+          </div>
         </div>
       </div>
       
-      {/* List */}
+      {/* Compact List */}
       <ScrollArea className="flex-1 scrollbar-thin">
-        <div className="divide-y divide-border">
+        <div className="divide-y divide-border/50">
           {filteredItems.map((item) => {
             const matchInfo = getMatchedExpectationForLineItem(item.planReference);
             const isMatched = !!matchInfo;
@@ -102,68 +92,58 @@ export function StatementItemList() {
               <div
                 key={item.id}
                 className={cn(
-                  "px-4 py-3 transition-all duration-150",
+                  "px-3 py-1.5 flex items-center gap-2 text-sm",
                   isMatched ? "bg-success/5" : "bg-background hover:bg-muted/30"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  {/* Status Icon */}
-                  <div className="shrink-0 mt-0.5">
-                    {isMatched ? (
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                    ) : (
-                      <Circle className="h-4 w-4 text-muted-foreground/50" />
-                    )}
-                  </div>
-                  
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <User className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="font-medium text-foreground text-sm truncate">
-                        {item.clientName}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {item.planReference}
-                    </p>
-                    <p className="text-xs text-muted-foreground/70 truncate mt-0.5">
-                      {item.description}
-                    </p>
-                  </div>
-                  
-                  {/* Amount */}
-                  <div className="text-right shrink-0">
-                    <span className="font-semibold text-sm tabular-nums">
-                      {formatCurrency(item.amount)}
-                    </span>
-                    {isMatched && (
-                      <div className="flex items-center justify-end gap-1 text-xs text-success mt-0.5">
-                        <ArrowRight className="h-3 w-3" />
-                        <span>Allocated</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                {/* Status Icon */}
+                {isMatched ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                ) : (
+                  <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                )}
+                
+                {/* Client Name */}
+                <span className="font-medium text-foreground truncate w-40" title={item.clientName}>
+                  {item.clientName}
+                </span>
+                
+                {/* Plan Reference */}
+                <span className="text-xs text-muted-foreground truncate w-28" title={item.planReference}>
+                  {item.planReference}
+                </span>
+                
+                {/* Description */}
+                <span className="text-xs text-muted-foreground/70 truncate flex-1" title={item.description}>
+                  {item.description}
+                </span>
+                
+                {/* Amount */}
+                <span className="font-semibold tabular-nums text-right w-20 shrink-0">
+                  {formatCurrency(item.amount)}
+                </span>
+                
+                {isMatched && (
+                  <Badge variant="outline" className="text-xs h-4 bg-success/10 text-success border-success/30 shrink-0">
+                    Allocated
+                  </Badge>
+                )}
               </div>
             );
           })}
           
           {filteredItems.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <Circle className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
+            <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">No items found</p>
             </div>
           )}
         </div>
       </ScrollArea>
       
-      {/* Footer Summary */}
-      <div className="p-3 border-t border-border bg-muted/30">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Statement Total</span>
-          <span className="font-bold tabular-nums">{formatCurrency(payment.amount)}</span>
-        </div>
+      {/* Compact Footer */}
+      <div className="px-3 py-1.5 border-t border-border bg-muted/30 flex items-center justify-between text-sm">
+        <span className="text-muted-foreground text-xs">Total</span>
+        <span className="font-bold tabular-nums">{formatCurrency(payment.amount)}</span>
       </div>
     </div>
   );
