@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Payment, Expectation, Match, ReconciliationStatistics, PaymentFilters, ExpectationFilters } from '@/types/reconciliation';
+import { Payment, PaymentLineItem, Expectation, Match, ReconciliationStatistics, PaymentFilters, ExpectationFilters } from '@/types/reconciliation';
 import { mockPayments, mockExpectations, mockMatches } from '@/data/mockData';
 
 interface ReconciliationStore {
@@ -10,6 +10,7 @@ interface ReconciliationStore {
   
   // Selection state
   selectedPaymentId: string | null;
+  selectedLineItemId: string | null;
   pendingMatchExpectationIds: string[];
   
   // Filters
@@ -25,9 +26,11 @@ interface ReconciliationStore {
   
   // Actions
   selectPayment: (paymentId: string | null) => void;
+  selectLineItem: (lineItemId: string | null) => void;
   toggleExpectationSelection: (expectationId: string) => void;
   clearPendingSelections: () => void;
   confirmMatch: (notes?: string) => void;
+  confirmLineItemMatch: (expectationId: string, notes?: string) => void;
   autoMatchCurrentPayment: () => void;
   setTolerance: (tolerance: number) => void;
   setPaymentFilters: (filters: Partial<PaymentFilters>) => void;
@@ -36,9 +39,11 @@ interface ReconciliationStore {
   
   // Derived getters
   getSelectedPayment: () => Payment | null;
+  getSelectedLineItem: () => PaymentLineItem | null;
   getRelevantExpectations: () => Expectation[];
   getPendingMatchTotal: () => number;
   getVariance: () => { amount: number; percentage: number; quality: 'perfect' | 'good' | 'acceptable' | 'warning' };
+  getLineItemVariance: (expectationId: string) => { amount: number; percentage: number; quality: 'perfect' | 'good' | 'acceptable' | 'warning' } | null;
 }
 
 const calculateStatistics = (payments: Payment[], expectations: Expectation[], matches: Match[]): ReconciliationStatistics => {
@@ -86,6 +91,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   matches: mockMatches,
   
   selectedPaymentId: null,
+  selectedLineItemId: null,
   pendingMatchExpectationIds: [],
   
   paymentFilters: {
@@ -105,7 +111,11 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   statistics: calculateStatistics(mockPayments, mockExpectations, mockMatches),
   
   selectPayment: (paymentId) => {
-    set({ selectedPaymentId: paymentId, pendingMatchExpectationIds: [] });
+    set({ selectedPaymentId: paymentId, selectedLineItemId: null, pendingMatchExpectationIds: [] });
+  },
+  
+  selectLineItem: (lineItemId) => {
+    set({ selectedLineItemId: lineItemId, pendingMatchExpectationIds: [] });
   },
   
   toggleExpectationSelection: (expectationId) => {
@@ -118,7 +128,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   },
   
   clearPendingSelections: () => {
-    set({ pendingMatchExpectationIds: [] });
+    set({ pendingMatchExpectationIds: [], selectedLineItemId: null });
   },
   
   confirmMatch: (notes = '') => {
@@ -316,6 +326,13 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     return payments.find(p => p.id === selectedPaymentId) || null;
   },
   
+  getSelectedLineItem: () => {
+    const { payments, selectedPaymentId, selectedLineItemId } = get();
+    if (!selectedPaymentId || !selectedLineItemId) return null;
+    const payment = payments.find(p => p.id === selectedPaymentId);
+    return payment?.lineItems.find(li => li.id === selectedLineItemId) || null;
+  },
+  
   getRelevantExpectations: () => {
     const { expectations, payments, selectedPaymentId, expectationFilters } = get();
     const payment = payments.find(p => p.id === selectedPaymentId);
@@ -369,5 +386,115 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     else if (absPercentage <= tolerance) quality = 'acceptable';
     
     return { amount: variance, percentage, quality };
+  },
+  
+  getLineItemVariance: (expectationId: string) => {
+    const { selectedPaymentId, selectedLineItemId, payments, expectations, tolerance } = get();
+    const payment = payments.find(p => p.id === selectedPaymentId);
+    if (!payment || !selectedLineItemId) return null;
+    
+    const lineItem = payment.lineItems.find(li => li.id === selectedLineItemId);
+    const expectation = expectations.find(e => e.id === expectationId);
+    if (!lineItem || !expectation) return null;
+    
+    const variance = lineItem.amount - expectation.expectedAmount;
+    const percentage = expectation.expectedAmount > 0 ? (variance / expectation.expectedAmount) * 100 : 0;
+    
+    let quality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+    const absPercentage = Math.abs(percentage);
+    if (absPercentage < 0.1) quality = 'perfect';
+    else if (absPercentage <= 2) quality = 'good';
+    else if (absPercentage <= tolerance) quality = 'acceptable';
+    
+    return { amount: variance, percentage, quality };
+  },
+  
+  confirmLineItemMatch: (expectationId: string, notes = '') => {
+    const { selectedPaymentId, selectedLineItemId, payments, expectations, matches, tolerance } = get();
+    
+    if (!selectedPaymentId || !selectedLineItemId) return;
+    
+    const payment = payments.find(p => p.id === selectedPaymentId);
+    if (!payment) return;
+    
+    const lineItem = payment.lineItems.find(li => li.id === selectedLineItemId);
+    const expectation = expectations.find(e => e.id === expectationId);
+    if (!lineItem || !expectation) return;
+    
+    const variance = lineItem.amount - expectation.expectedAmount;
+    const variancePercentage = expectation.expectedAmount > 0 ? (variance / expectation.expectedAmount) * 100 : 0;
+    
+    let quality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+    const absVariance = Math.abs(variancePercentage);
+    if (absVariance === 0) quality = 'perfect';
+    else if (absVariance <= 2) quality = 'good';
+    else if (absVariance <= tolerance) quality = 'acceptable';
+    
+    // Create match record
+    const newMatch: Match = {
+      id: Math.random().toString(36).substring(2, 11),
+      paymentId: selectedPaymentId,
+      expectationIds: [expectationId],
+      matchedAmount: lineItem.amount,
+      variance,
+      variancePercentage,
+      matchType: 'full',
+      matchMethod: 'manual',
+      matchQuality: quality,
+      notes,
+      matchedBy: 'Current User',
+      matchedAt: new Date().toISOString(),
+      confirmed: true,
+      details: [{
+        expectationId,
+        amountAllocated: lineItem.amount
+      }]
+    };
+    
+    // Update expectation
+    const updatedExpectations = expectations.map(e => {
+      if (e.id === expectationId) {
+        return {
+          ...e,
+          status: 'matched' as const,
+          allocatedAmount: lineItem.amount,
+          remainingAmount: 0,
+          matchedToPayments: [...e.matchedToPayments, {
+            paymentId: selectedPaymentId,
+            amount: lineItem.amount,
+            matchId: newMatch.id
+          }]
+        };
+      }
+      return e;
+    });
+    
+    // Update payment
+    const newReconciledAmount = payment.reconciledAmount + lineItem.amount;
+    const newRemainingAmount = payment.amount - newReconciledAmount;
+    const newStatus = Math.abs(newRemainingAmount) < 1 ? 'reconciled' : 'in_progress';
+    
+    const updatedPayments = payments.map(p => {
+      if (p.id === selectedPaymentId) {
+        return {
+          ...p,
+          reconciledAmount: newReconciledAmount,
+          remainingAmount: newRemainingAmount,
+          status: newStatus as Payment['status'],
+          matchedExpectationIds: [...p.matchedExpectationIds, expectationId]
+        };
+      }
+      return p;
+    });
+    
+    const updatedMatches = [...matches, newMatch];
+    
+    set({
+      payments: updatedPayments,
+      expectations: updatedExpectations,
+      matches: updatedMatches,
+      selectedLineItemId: null,
+      statistics: calculateStatistics(updatedPayments, updatedExpectations, updatedMatches)
+    });
   }
 }));
