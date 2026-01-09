@@ -235,24 +235,40 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     const payment = payments.find(p => p.id === selectedPaymentId);
     if (!payment) return;
     
-    // Find unmatched expectations for this provider within tolerance
+    // Get unmatched line items from the payment
+    const unmatchedLineItems = payment.lineItems.filter(li => {
+      // Check if this line item's plan reference is already matched to an expectation
+      const alreadyMatched = expectations.some(e => 
+        e.planReference === li.planReference && e.status === 'matched'
+      );
+      return !alreadyMatched;
+    });
+    
+    // Find unmatched expectations for this provider
     const relevantExpectations = expectations.filter(e => 
       e.providerName === payment.providerName && 
       e.status === 'unmatched'
     );
     
-    // Simple auto-match: find expectations that sum close to remaining amount
-    let remaining = payment.remainingAmount;
     const toMatch: string[] = [];
     
-    // Sort by expected amount descending for greedy matching
-    const sorted = [...relevantExpectations].sort((a, b) => b.expectedAmount - a.expectedAmount);
-    
-    for (const exp of sorted) {
-      if (exp.expectedAmount <= remaining * (1 + tolerance / 100)) {
-        toMatch.push(exp.id);
-        remaining -= exp.expectedAmount;
-        if (remaining <= 0) break;
+    // Match each line item to an expectation by plan reference
+    for (const lineItem of unmatchedLineItems) {
+      const matchingExpectation = relevantExpectations.find(e => 
+        e.planReference === lineItem.planReference &&
+        !toMatch.includes(e.id) // Don't match same expectation twice
+      );
+      
+      if (matchingExpectation) {
+        // Check if variance is within tolerance at line item level
+        const variance = Math.abs(lineItem.amount - matchingExpectation.expectedAmount);
+        const variancePercentage = matchingExpectation.expectedAmount > 0 
+          ? (variance / matchingExpectation.expectedAmount) * 100 
+          : 0;
+        
+        if (variancePercentage <= tolerance) {
+          toMatch.push(matchingExpectation.id);
+        }
       }
     }
     
