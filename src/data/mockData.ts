@@ -87,7 +87,8 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
       clientName,
       planReference,
       amount: lineItemAmount,
-      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee`
+      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee`,
+      status: 'unmatched'
     });
   }
   
@@ -146,6 +147,8 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     e.status = 'matched';
     e.allocatedAmount = aegon3.lineItems[idx].amount;
     e.remainingAmount = 0;
+    aegon3.lineItems[idx].status = 'matched';
+    aegon3.lineItems[idx].matchedExpectationId = e.id;
   });
   payments.push({
     id: generateId(),
@@ -176,6 +179,8 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     aviva1.expectations[i].status = 'matched';
     aviva1.expectations[i].allocatedAmount = aviva1.lineItems[i].amount;
     aviva1.expectations[i].remainingAmount = 0;
+    aviva1.lineItems[i].status = 'matched';
+    aviva1.lineItems[i].matchedExpectationId = aviva1.expectations[i].id;
     matchedAmount += aviva1.lineItems[i].amount;
   }
   payments.push({
@@ -239,6 +244,8 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     e.status = 'matched';
     e.allocatedAmount = aviva4.lineItems[idx].amount;
     e.remainingAmount = 0;
+    aviva4.lineItems[idx].status = 'matched';
+    aviva4.lineItems[idx].matchedExpectationId = e.id;
   });
   payments.push({
     id: generateId(),
@@ -287,6 +294,8 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     lg2.expectations[i].status = 'matched';
     lg2.expectations[i].allocatedAmount = lg2.lineItems[i].amount;
     lg2.expectations[i].remainingAmount = 0;
+    lg2.lineItems[i].status = 'matched';
+    lg2.lineItems[i].matchedExpectationId = lg2.expectations[i].id;
     lgMatchedAmount += lg2.lineItems[i].amount;
   }
   payments.push({

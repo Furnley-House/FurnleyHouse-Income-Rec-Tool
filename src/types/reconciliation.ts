@@ -6,6 +6,19 @@ export interface PaymentLineItem {
   planReference: string;
   amount: number;
   description: string;
+  status: 'unmatched' | 'matched' | 'approved_unmatched';
+  matchedExpectationId?: string;
+  matchNotes?: string;
+}
+
+export interface PendingMatch {
+  lineItemId: string;
+  expectationId: string;
+  lineItemAmount: number;
+  expectedAmount: number;
+  variance: number;
+  variancePercentage: number;
+  isWithinTolerance: boolean;
 }
 
 export interface Payment {

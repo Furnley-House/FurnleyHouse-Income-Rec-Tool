@@ -7,7 +7,6 @@ import {
   CheckCircle2, 
   X,
   AlertTriangle,
-  Sparkles,
   TrendingUp,
   TrendingDown,
   Equal
@@ -27,23 +26,17 @@ export function MatchConfirmation() {
   const [notes, setNotes] = useState('');
   
   const { 
-    pendingMatchExpectationIds,
+    pendingMatches,
     expectations,
-    getPendingMatchTotal,
-    getVariance,
+    getPendingMatchSummary,
     getSelectedPayment,
-    clearPendingSelections,
-    confirmMatch,
+    clearPendingMatches,
+    confirmPendingMatches,
     tolerance
   } = useReconciliationStore();
   
   const payment = getSelectedPayment();
-  const selectedTotal = getPendingMatchTotal();
-  const variance = getVariance();
-  
-  const selectedExpectations = expectations.filter(e => 
-    pendingMatchExpectationIds.includes(e.id)
-  );
+  const summary = getPendingMatchSummary();
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -55,18 +48,27 @@ export function MatchConfirmation() {
   };
   
   const getVarianceIcon = () => {
-    if (Math.abs(variance.percentage) < 0.1) {
+    if (Math.abs(summary.variancePercentage) < 0.1) {
       return <Equal className="h-4 w-4" />;
     }
-    return variance.amount > 0 
+    return summary.variance > 0 
       ? <TrendingUp className="h-4 w-4" />
       : <TrendingDown className="h-4 w-4" />;
   };
   
+  const getQuality = () => {
+    const absVariance = Math.abs(summary.variancePercentage);
+    if (absVariance < 0.1) return 'perfect';
+    if (absVariance <= 2) return 'good';
+    if (absVariance <= tolerance) return 'acceptable';
+    return 'warning';
+  };
+  
+  const quality = getQuality();
+  
   const getVarianceColor = () => {
-    switch (variance.quality) {
+    switch (quality) {
       case 'perfect':
-        return 'text-success bg-success-light border-success/30';
       case 'good':
         return 'text-success bg-success-light border-success/30';
       case 'acceptable':
@@ -77,7 +79,7 @@ export function MatchConfirmation() {
   };
   
   const getQualityLabel = () => {
-    switch (variance.quality) {
+    switch (quality) {
       case 'perfect':
         return 'Perfect Match';
       case 'good':
@@ -90,12 +92,19 @@ export function MatchConfirmation() {
   };
   
   const handleConfirm = () => {
-    confirmMatch(notes);
+    confirmPendingMatches(notes);
     setNotes('');
     setIsDialogOpen(false);
   };
   
-  const isWithinTolerance = Math.abs(variance.percentage) <= tolerance;
+  const allWithinTolerance = summary.allWithinTolerance;
+  const hasOutOfTolerance = pendingMatches.some(pm => !pm.isWithinTolerance);
+  
+  // Get matched expectations for display
+  const matchedExpectations = pendingMatches.map(pm => {
+    const exp = expectations.find(e => e.id === pm.expectationId);
+    return { ...pm, expectation: exp };
+  });
   
   return (
     <>
@@ -106,19 +115,19 @@ export function MatchConfirmation() {
           <div className="flex items-center gap-6">
             <div>
               <p className="text-sm text-muted-foreground">
-                {pendingMatchExpectationIds.length} expectation{pendingMatchExpectationIds.length !== 1 ? 's' : ''} selected
+                {pendingMatches.length} match{pendingMatches.length !== 1 ? 'es' : ''} pending
               </p>
               <p className="text-2xl font-bold text-foreground tabular-nums">
-                {formatCurrency(selectedTotal)}
+                {formatCurrency(summary.totalLineItemAmount)}
               </p>
             </div>
             
             <div className="h-10 w-px bg-border" />
             
             <div>
-              <p className="text-sm text-muted-foreground">Payment Target</p>
+              <p className="text-sm text-muted-foreground">Expected Total</p>
               <p className="text-lg font-semibold text-foreground tabular-nums">
-                {formatCurrency(payment?.remainingAmount || payment?.amount || 0)}
+                {formatCurrency(summary.totalExpectedAmount)}
               </p>
             </div>
             
@@ -131,21 +140,29 @@ export function MatchConfirmation() {
                 <div>
                   <p className="text-xs opacity-80">{getQualityLabel()}</p>
                   <p className="font-semibold tabular-nums">
-                    {variance.amount >= 0 ? '+' : ''}{formatCurrency(variance.amount)}
+                    {summary.variance >= 0 ? '+' : ''}{formatCurrency(summary.variance)}
                     <span className="text-xs ml-1">
-                      ({variance.percentage >= 0 ? '+' : ''}{variance.percentage.toFixed(2)}%)
+                      ({summary.variancePercentage >= 0 ? '+' : ''}{summary.variancePercentage.toFixed(2)}%)
                     </span>
                   </p>
                 </div>
               </div>
             </div>
+            
+            {/* Out of tolerance warning */}
+            {hasOutOfTolerance && (
+              <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {pendingMatches.filter(pm => !pm.isWithinTolerance).length} out of tolerance
+              </Badge>
+            )}
           </div>
           
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
-              onClick={clearPendingSelections}
+              onClick={clearPendingMatches}
               className="gap-2"
             >
               <X className="h-4 w-4" />
@@ -155,14 +172,14 @@ export function MatchConfirmation() {
             <Button
               onClick={() => setIsDialogOpen(true)}
               className="gap-2"
-              variant={isWithinTolerance ? "default" : "outline"}
+              variant={allWithinTolerance ? "default" : "outline"}
             >
-              {isWithinTolerance ? (
+              {allWithinTolerance ? (
                 <CheckCircle2 className="h-4 w-4" />
               ) : (
                 <AlertTriangle className="h-4 w-4" />
               )}
-              {isWithinTolerance ? 'Confirm Match' : 'Review Match'}
+              {allWithinTolerance ? 'Confirm Matches' : 'Review & Confirm'}
             </Button>
           </div>
         </div>
@@ -173,15 +190,15 @@ export function MatchConfirmation() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {isWithinTolerance ? (
+              {allWithinTolerance ? (
                 <CheckCircle2 className="h-5 w-5 text-success" />
               ) : (
                 <AlertTriangle className="h-5 w-5 text-warning" />
               )}
-              Confirm Match
+              Confirm {pendingMatches.length} Match{pendingMatches.length !== 1 ? 'es' : ''}
             </DialogTitle>
             <DialogDescription>
-              Review the match details before confirming
+              Review the pending matches before confirming
             </DialogDescription>
           </DialogHeader>
           
@@ -192,21 +209,32 @@ export function MatchConfirmation() {
               <p className="font-semibold text-foreground">
                 {payment?.providerName} • {payment?.paymentReference}
               </p>
-              <p className="text-xl font-bold text-foreground tabular-nums">
-                {formatCurrency(payment?.amount || 0)}
-              </p>
             </div>
             
-            {/* Selected Expectations */}
+            {/* Pending Matches */}
             <div>
               <p className="text-sm text-muted-foreground mb-2">
-                Selected Expectations ({selectedExpectations.length})
+                Pending Matches ({matchedExpectations.length})
               </p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {selectedExpectations.map(exp => (
-                  <div key={exp.id} className="flex items-center justify-between bg-card rounded p-2 border">
-                    <span className="text-sm text-foreground truncate">{exp.clientName}</span>
-                    <span className="text-sm font-medium tabular-nums">{formatCurrency(exp.expectedAmount)}</span>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {matchedExpectations.map(({ lineItemId, expectation, lineItemAmount, expectedAmount, variancePercentage, isWithinTolerance }) => (
+                  <div key={lineItemId} className={cn(
+                    "flex items-center justify-between bg-card rounded p-2 border",
+                    !isWithinTolerance && "border-warning/50"
+                  )}>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-foreground truncate block">{expectation?.clientName}</span>
+                      <span className="text-xs text-muted-foreground">{expectation?.planReference}</span>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <span className="text-sm font-medium tabular-nums block">{formatCurrency(lineItemAmount)}</span>
+                      <span className={cn(
+                        "text-xs tabular-nums",
+                        isWithinTolerance ? "text-success" : "text-warning"
+                      )}>
+                        {variancePercentage >= 0 ? '+' : ''}{variancePercentage.toFixed(1)}%
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -215,26 +243,26 @@ export function MatchConfirmation() {
             {/* Summary */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-muted/50 rounded-lg p-3">
-                <p className="text-sm text-muted-foreground">Selected Total</p>
-                <p className="text-lg font-bold tabular-nums">{formatCurrency(selectedTotal)}</p>
+                <p className="text-sm text-muted-foreground">Total Allocated</p>
+                <p className="text-lg font-bold tabular-nums">{formatCurrency(summary.totalLineItemAmount)}</p>
               </div>
               <div className={cn("rounded-lg p-3 border", getVarianceColor())}>
-                <p className="text-sm opacity-80">Variance</p>
+                <p className="text-sm opacity-80">Overall Variance</p>
                 <p className="text-lg font-bold tabular-nums">
-                  {variance.amount >= 0 ? '+' : ''}{formatCurrency(variance.amount)}
-                  <span className="text-sm ml-1">({variance.percentage.toFixed(2)}%)</span>
+                  {summary.variance >= 0 ? '+' : ''}{formatCurrency(summary.variance)}
+                  <span className="text-sm ml-1">({summary.variancePercentage.toFixed(2)}%)</span>
                 </p>
               </div>
             </div>
             
-            {/* Warning if outside tolerance */}
-            {!isWithinTolerance && (
+            {/* Warning if any outside tolerance */}
+            {hasOutOfTolerance && (
               <div className="flex items-start gap-3 bg-warning-light rounded-lg p-3 border border-warning/30">
                 <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-warning text-sm">Outside Tolerance</p>
+                  <p className="font-medium text-warning text-sm">Some matches outside tolerance</p>
                   <p className="text-xs text-warning/80">
-                    This match has a variance of {Math.abs(variance.percentage).toFixed(2)}%, which exceeds the {tolerance}% tolerance threshold.
+                    {pendingMatches.filter(pm => !pm.isWithinTolerance).length} match(es) exceed the {tolerance}% tolerance threshold.
                   </p>
                 </div>
               </div>
@@ -243,20 +271,20 @@ export function MatchConfirmation() {
             {/* Notes */}
             <div>
               <p className="text-sm text-muted-foreground mb-2">
-                {isWithinTolerance ? 'Notes (optional)' : 'Approval Notes (required)'}
+                {hasOutOfTolerance ? 'Approval Notes (required for out-of-tolerance)' : 'Notes (optional)'}
               </p>
               <Textarea
-                placeholder={isWithinTolerance 
-                  ? "Add any notes about this reconciliation..." 
-                  : "Please provide justification for approving this out-of-tolerance match..."
+                placeholder={hasOutOfTolerance 
+                  ? "Please provide justification for approving these matches..." 
+                  : "Add any notes about this reconciliation..."
                 }
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className={cn("resize-none", !isWithinTolerance && !notes.trim() && "border-warning")}
+                className={cn("resize-none", hasOutOfTolerance && !notes.trim() && "border-warning")}
                 rows={2}
               />
-              {!isWithinTolerance && !notes.trim() && (
-                <p className="text-xs text-warning mt-1">Approval notes are required for out-of-tolerance matches</p>
+              {hasOutOfTolerance && !notes.trim() && (
+                <p className="text-xs text-warning mt-1">Notes are required when approving out-of-tolerance matches</p>
               )}
             </div>
           </div>
@@ -268,10 +296,10 @@ export function MatchConfirmation() {
             <Button 
               onClick={handleConfirm} 
               className="gap-2"
-              disabled={!isWithinTolerance && !notes.trim()}
+              disabled={hasOutOfTolerance && !notes.trim()}
             >
               <CheckCircle2 className="h-4 w-4" />
-              {isWithinTolerance ? 'Confirm Match' : 'Approve Match'}
+              {allWithinTolerance ? 'Confirm Matches' : 'Approve & Confirm'}
             </Button>
           </DialogFooter>
         </DialogContent>
