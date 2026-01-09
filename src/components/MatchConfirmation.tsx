@@ -242,14 +242,22 @@ export function MatchConfirmation() {
             
             {/* Notes */}
             <div>
-              <p className="text-sm text-muted-foreground mb-2">Notes (optional)</p>
+              <p className="text-sm text-muted-foreground mb-2">
+                {isWithinTolerance ? 'Notes (optional)' : 'Approval Notes (required)'}
+              </p>
               <Textarea
-                placeholder="Add any notes about this reconciliation..."
+                placeholder={isWithinTolerance 
+                  ? "Add any notes about this reconciliation..." 
+                  : "Please provide justification for approving this out-of-tolerance match..."
+                }
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="resize-none"
+                className={cn("resize-none", !isWithinTolerance && !notes.trim() && "border-warning")}
                 rows={2}
               />
+              {!isWithinTolerance && !notes.trim() && (
+                <p className="text-xs text-warning mt-1">Approval notes are required for out-of-tolerance matches</p>
+              )}
             </div>
           </div>
           
@@ -257,9 +265,13 @@ export function MatchConfirmation() {
             <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirm} className="gap-2">
+            <Button 
+              onClick={handleConfirm} 
+              className="gap-2"
+              disabled={!isWithinTolerance && !notes.trim()}
+            >
               <CheckCircle2 className="h-4 w-4" />
-              Confirm Match
+              {isWithinTolerance ? 'Confirm Match' : 'Approve Match'}
             </Button>
           </DialogFooter>
         </DialogContent>
