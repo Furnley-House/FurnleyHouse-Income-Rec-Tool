@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { 
@@ -35,25 +34,35 @@ export function ExpectationGrid() {
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [selectedExpForMatch, setSelectedExpForMatch] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState('');
+  const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(null);
   
   const { 
     getRelevantExpectations,
-    pendingMatchExpectationIds,
-    toggleExpectationSelection,
+    getPendingMatchForExpectation,
     expectationFilters,
     setExpectationFilters,
     getSelectedPayment,
-    selectedLineItemId,
-    getSelectedLineItem,
-    getLineItemVariance,
-    confirmLineItemMatch,
-    selectLineItem,
+    calculateVariance,
+    addPendingMatch,
     tolerance
   } = useReconciliationStore();
   
   const payment = getSelectedPayment();
   const expectations = getRelevantExpectations();
-  const selectedLineItem = getSelectedLineItem();
+  
+  // Poll for selected line item from StatementItemList
+  useEffect(() => {
+    const checkSelection = () => {
+      const id = (window as any).__selectedLineItemId || null;
+      if (id !== selectedLineItemId) {
+        setSelectedLineItemId(id);
+      }
+    };
+    
+    checkSelection();
+    const interval = setInterval(checkSelection, 100);
+    return () => clearInterval(interval);
+  }, [selectedLineItemId]);
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -75,16 +84,22 @@ export function ExpectationGrid() {
   };
   
   // Count by status
-  const unmatchedCount = expectations.filter(e => e.status === 'unmatched').length;
+  const unmatchedCount = expectations.filter(e => e.status === 'unmatched' && !getPendingMatchForExpectation(e.id)).length;
+  const pendingCount = expectations.filter(e => getPendingMatchForExpectation(e.id)).length;
   const matchedCount = expectations.filter(e => e.status === 'matched').length;
   
   const handleMatchClick = (expectationId: string) => {
-    const variance = getLineItemVariance(expectationId);
-    const isWithinTolerance = variance && Math.abs(variance.percentage) <= tolerance;
+    if (!selectedLineItemId) return;
+    
+    const variance = calculateVariance(selectedLineItemId, expectationId);
+    const isWithinTolerance = variance && variance.isWithinTolerance;
     
     if (isWithinTolerance) {
       // Direct match within tolerance
-      confirmLineItemMatch(expectationId);
+      const onMatched = (window as any).__onLineItemMatched;
+      if (onMatched) {
+        onMatched(expectationId);
+      }
     } else {
       // Need approval for out-of-tolerance match
       setSelectedExpForMatch(expectationId);
@@ -94,8 +109,13 @@ export function ExpectationGrid() {
   };
   
   const handleConfirmOutOfToleranceMatch = () => {
-    if (selectedExpForMatch && approvalNotes.trim()) {
-      confirmLineItemMatch(selectedExpForMatch, approvalNotes);
+    if (selectedExpForMatch && approvalNotes.trim() && selectedLineItemId) {
+      addPendingMatch(selectedLineItemId, selectedExpForMatch);
+      // Clear the selection in StatementItemList
+      const clearSelection = (window as any).__clearLineItemSelection;
+      if (clearSelection) {
+        clearSelection();
+      }
       setMatchDialogOpen(false);
       setSelectedExpForMatch(null);
       setApprovalNotes('');
@@ -105,7 +125,14 @@ export function ExpectationGrid() {
   const selectedExpectation = selectedExpForMatch 
     ? expectations.find(e => e.id === selectedExpForMatch) 
     : null;
-  const dialogVariance = selectedExpForMatch ? getLineItemVariance(selectedExpForMatch) : null;
+  const dialogVariance = selectedExpForMatch && selectedLineItemId 
+    ? calculateVariance(selectedLineItemId, selectedExpForMatch) 
+    : null;
+  
+  // Get selected line item details
+  const selectedLineItem = selectedLineItemId && payment
+    ? payment.lineItems.find(li => li.id === selectedLineItemId)
+    : null;
   
   return (
     <div className="h-full flex flex-col bg-card">
@@ -115,12 +142,21 @@ export function ExpectationGrid() {
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-secondary-foreground" />
             <span className="font-semibold text-foreground text-sm">Expected Fees</span>
-            <Badge variant="outline" className="bg-muted text-xs h-5">
-              {unmatchedCount} unmatched
-            </Badge>
-            <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs h-5">
-              {matchedCount} matched
-            </Badge>
+            {unmatchedCount > 0 && (
+              <Badge variant="outline" className="bg-muted text-xs h-5">
+                {unmatchedCount} unmatched
+              </Badge>
+            )}
+            {pendingCount > 0 && (
+              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-xs h-5">
+                {pendingCount} pending
+              </Badge>
+            )}
+            {matchedCount > 0 && (
+              <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs h-5">
+                {matchedCount} matched
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <div className="relative">
@@ -162,7 +198,10 @@ export function ExpectationGrid() {
               </span>
             </div>
             <button 
-              onClick={() => selectLineItem(null)}
+              onClick={() => {
+                const clearSelection = (window as any).__clearLineItemSelection;
+                if (clearSelection) clearSelection();
+              }}
               className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
             >
               <X className="h-3 w-3" />
@@ -176,11 +215,17 @@ export function ExpectationGrid() {
       <ScrollArea className="flex-1 scrollbar-thin">
         <div className="divide-y divide-border/50">
           {expectations.map((expectation) => {
-            const isSelected = pendingMatchExpectationIds.includes(expectation.id);
+            const pendingMatch = getPendingMatchForExpectation(expectation.id);
+            const isPending = !!pendingMatch;
             const isMatched = expectation.status === 'matched';
             const isMatchedToThisPayment = payment?.matchedExpectationIds.includes(expectation.id);
-            const lineItemVariance = selectedLineItemId ? getLineItemVariance(expectation.id) : null;
-            const isWithinTolerance = lineItemVariance && Math.abs(lineItemVariance.percentage) <= tolerance;
+            
+            const variance = selectedLineItemId 
+              ? calculateVariance(selectedLineItemId, expectation.id) 
+              : null;
+            const isWithinTolerance = variance?.isWithinTolerance ?? false;
+            
+            const canMatch = selectedLineItemId && !isMatched && !isPending;
             
             return (
               <div
@@ -189,38 +234,26 @@ export function ExpectationGrid() {
                   "px-3 py-1.5 flex items-center gap-2 text-sm",
                   isMatched && isMatchedToThisPayment && "bg-success/5",
                   isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-50",
-                  !isMatched && isSelected && "bg-primary/5 ring-1 ring-inset ring-primary/20",
-                  !isMatched && !isSelected && !selectedLineItemId && "bg-background hover:bg-muted/30 cursor-pointer",
-                  !isMatched && selectedLineItemId && "bg-background"
+                  isPending && "bg-primary/5",
+                  !isMatched && !isPending && "bg-background"
                 )}
-                onClick={() => {
-                  if (!isMatched && !selectedLineItemId) {
-                    toggleExpectationSelection(expectation.id);
-                  }
-                }}
               >
-                {/* Checkbox/Status - only show when not in line item match mode */}
-                {!selectedLineItemId && (
-                  <div className="shrink-0">
-                    {isMatched ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                    ) : (
-                      <Checkbox 
-                        checked={isSelected}
-                        onCheckedChange={() => toggleExpectationSelection(expectation.id)}
-                        className="h-3.5 w-3.5"
-                      />
-                    )}
-                  </div>
+                {/* Status Icon */}
+                {isMatched ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                ) : isPending ? (
+                  <Link2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                ) : (
+                  <Target className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
                 )}
                 
                 {/* Client Name */}
-                <span className="font-medium text-foreground truncate w-40" title={expectation.clientName}>
+                <span className="font-medium text-foreground truncate w-36" title={expectation.clientName}>
                   {expectation.clientName}
                 </span>
                 
                 {/* Plan Reference */}
-                <span className="text-xs text-muted-foreground truncate w-28" title={expectation.planReference}>
+                <span className="text-xs text-muted-foreground truncate w-24" title={expectation.planReference}>
                   {expectation.planReference}
                 </span>
                 
@@ -233,14 +266,26 @@ export function ExpectationGrid() {
                 <div className="flex-1" />
                 
                 {/* Variance indicator when in line item match mode */}
-                {selectedLineItemId && !isMatched && lineItemVariance && (
+                {canMatch && variance && (
                   <div className={cn(
                     "text-xs px-1.5 py-0.5 rounded",
                     isWithinTolerance 
                       ? "bg-success/10 text-success" 
                       : "bg-warning/10 text-warning"
                   )}>
-                    {lineItemVariance.amount >= 0 ? '+' : ''}{lineItemVariance.percentage.toFixed(1)}%
+                    {variance.amount >= 0 ? '+' : ''}{variance.percentage.toFixed(1)}%
+                  </div>
+                )}
+                
+                {/* Pending variance */}
+                {isPending && pendingMatch && (
+                  <div className={cn(
+                    "text-xs px-1.5 py-0.5 rounded",
+                    pendingMatch.isWithinTolerance 
+                      ? "bg-success/10 text-success" 
+                      : "bg-warning/10 text-warning"
+                  )}>
+                    {pendingMatch.variance >= 0 ? '+' : ''}{pendingMatch.variancePercentage.toFixed(1)}%
                   </div>
                 )}
                 
@@ -250,15 +295,12 @@ export function ExpectationGrid() {
                 </span>
                 
                 {/* Match button when in line item match mode */}
-                {selectedLineItemId && !isMatched && (
+                {canMatch && (
                   <Button
                     size="sm"
                     variant={isWithinTolerance ? "default" : "outline"}
                     className="h-5 text-xs px-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleMatchClick(expectation.id);
-                    }}
+                    onClick={() => handleMatchClick(expectation.id)}
                   >
                     {isWithinTolerance ? (
                       <>
@@ -272,6 +314,12 @@ export function ExpectationGrid() {
                       </>
                     )}
                   </Button>
+                )}
+                
+                {isPending && (
+                  <Badge variant="outline" className="text-xs h-4 bg-primary/10 text-primary border-primary/30 shrink-0">
+                    Pending
+                  </Badge>
                 )}
                 
                 {isMatchedToThisPayment && (

@@ -1,13 +1,13 @@
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { PaymentSummary } from './PaymentSummary';
 import { ExpectationGrid } from './ExpectationGrid';
-import { StatementItemList } from './StatementItemList';
 import { MatchConfirmation } from './MatchConfirmation';
 import { EmptyWorkspace } from './EmptyWorkspace';
+import { StatementItemList } from './StatementItemList';
 import { ArrowLeftRight } from 'lucide-react';
 
 export function ReconciliationWorkspace() {
-  const { selectedPaymentId, pendingMatchExpectationIds } = useReconciliationStore();
+  const { selectedPaymentId, pendingMatches } = useReconciliationStore();
   
   if (!selectedPaymentId) {
     return <EmptyWorkspace />;
@@ -39,7 +39,7 @@ export function ReconciliationWorkspace() {
       </div>
       
       {/* Match Confirmation Bar */}
-      {pendingMatchExpectationIds.length > 0 && (
+      {pendingMatches.length > 0 && (
         <MatchConfirmation />
       )}
     </div>
