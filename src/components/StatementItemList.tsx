@@ -13,7 +13,9 @@ import {
   MousePointerClick,
   Link2,
   X,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import {
   Dialog,
@@ -31,6 +33,7 @@ export function StatementItemList() {
   const [approveUnmatchedDialogOpen, setApproveUnmatchedDialogOpen] = useState(false);
   const [approveUnmatchedNotes, setApproveUnmatchedNotes] = useState('');
   const [lineItemToApprove, setLineItemToApprove] = useState<string | null>(null);
+  const [showMatched, setShowMatched] = useState(false);
   
   const { 
     getSelectedPayment, 
@@ -52,18 +55,24 @@ export function StatementItemList() {
     }).format(amount);
   };
   
-  // Filter line items
-  const filteredItems = payment.lineItems.filter(item => {
+  // Get all items for counts
+  const allItems = payment.lineItems.filter(item => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return item.clientName.toLowerCase().includes(term) ||
            item.planReference.toLowerCase().includes(term);
   });
   
-  const matchedCount = filteredItems.filter(item => item.status === 'matched').length;
-  const pendingCount = filteredItems.filter(item => getPendingMatchForLineItem(item.id)).length;
-  const unmatchedCount = filteredItems.filter(item => item.status === 'unmatched' && !getPendingMatchForLineItem(item.id)).length;
-  const approvedUnmatchedCount = filteredItems.filter(item => item.status === 'approved_unmatched').length;
+  const matchedCount = allItems.filter(item => item.status === 'matched').length;
+  const pendingCount = allItems.filter(item => getPendingMatchForLineItem(item.id)).length;
+  const unmatchedCount = allItems.filter(item => item.status === 'unmatched' && !getPendingMatchForLineItem(item.id)).length;
+  const approvedUnmatchedCount = allItems.filter(item => item.status === 'approved_unmatched').length;
+  
+  // Filter out matched/approved items unless showMatched is true
+  const filteredItems = allItems.filter(item => {
+    if (showMatched) return true;
+    return item.status !== 'matched' && item.status !== 'approved_unmatched';
+  });
   
   const handleLineItemClick = (itemId: string) => {
     const item = payment.lineItems.find(li => li.id === itemId);
@@ -130,14 +139,36 @@ export function StatementItemList() {
                 </Badge>
               )}
             </div>
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-7 h-6 text-xs w-32"
-              />
+            <div className="flex items-center gap-1">
+              {matchedCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => setShowMatched(!showMatched)}
+                >
+                  {showMatched ? (
+                    <>
+                      <EyeOff className="h-3 w-3" />
+                      Hide matched
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-3 w-3" />
+                      Show matched
+                    </>
+                  )}
+                </Button>
+              )}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 h-6 text-xs w-32"
+                />
+              </div>
             </div>
           </div>
         </div>
