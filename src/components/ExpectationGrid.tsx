@@ -11,7 +11,9 @@ import {
   Target,
   Link2,
   AlertTriangle,
-  X
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import {
   Select,
@@ -35,6 +37,7 @@ export function ExpectationGrid() {
   const [selectedExpForMatch, setSelectedExpForMatch] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState('');
   const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(null);
+  const [showMatched, setShowMatched] = useState(false);
   
   const { 
     getRelevantExpectations,
@@ -48,7 +51,7 @@ export function ExpectationGrid() {
   } = useReconciliationStore();
   
   const payment = getSelectedPayment();
-  const expectations = getRelevantExpectations();
+  const allExpectations = getRelevantExpectations();
   
   // Poll for selected line item from StatementItemList
   useEffect(() => {
@@ -83,10 +86,16 @@ export function ExpectationGrid() {
       : 'bg-primary/10 text-primary border-primary/30';
   };
   
-  // Count by status
-  const unmatchedCount = expectations.filter(e => e.status === 'unmatched' && !getPendingMatchForExpectation(e.id)).length;
-  const pendingCount = expectations.filter(e => getPendingMatchForExpectation(e.id)).length;
-  const matchedCount = expectations.filter(e => e.status === 'matched').length;
+  // Count by status (from all expectations)
+  const unmatchedCount = allExpectations.filter(e => e.status === 'unmatched' && !getPendingMatchForExpectation(e.id)).length;
+  const pendingCount = allExpectations.filter(e => getPendingMatchForExpectation(e.id)).length;
+  const matchedCount = allExpectations.filter(e => e.status === 'matched').length;
+  
+  // Filter out matched items unless showMatched is true
+  const expectations = allExpectations.filter(exp => {
+    if (showMatched) return true;
+    return exp.status !== 'matched';
+  });
   
   const handleMatchClick = (expectationId: string) => {
     if (!selectedLineItemId) return;
@@ -159,6 +168,26 @@ export function ExpectationGrid() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {matchedCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                onClick={() => setShowMatched(!showMatched)}
+              >
+                {showMatched ? (
+                  <>
+                    <EyeOff className="h-3 w-3" />
+                    Hide matched
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-3 w-3" />
+                    Show matched
+                  </>
+                )}
+              </Button>
+            )}
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input
