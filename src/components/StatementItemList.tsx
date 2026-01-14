@@ -240,14 +240,21 @@ export function StatementItemList() {
                   )}
                   
                   {/* Client Name */}
-                  <span className="font-medium text-foreground truncate w-36" title={item.clientName}>
+                  <span className="font-medium text-foreground truncate w-32" title={item.clientName}>
                     {item.clientName}
                   </span>
                   
                   {/* Plan Reference */}
-                  <span className="text-xs text-muted-foreground truncate w-24" title={item.planReference}>
+                  <span className="text-xs text-muted-foreground truncate w-20" title={item.planReference}>
                     {item.planReference}
                   </span>
+                  
+                  {/* Agency Code */}
+                  {item.agencyCode && (
+                    <span className="text-xs text-muted-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded shrink-0" title="Agency Code">
+                      {item.agencyCode}
+                    </span>
+                  )}
                   
                   {/* Spacer */}
                   <div className="flex-1" />

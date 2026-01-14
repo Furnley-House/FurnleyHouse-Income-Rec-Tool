@@ -277,13 +277,19 @@ export function ExpectationGrid() {
                 )}
                 
                 {/* Client Name */}
-                <span className="font-medium text-foreground truncate w-36" title={expectation.clientName}>
+                <span className="font-medium text-foreground truncate w-28" title={expectation.clientName}>
                   {expectation.clientName}
                 </span>
                 
-                {/* Plan Reference */}
-                <span className="text-xs text-muted-foreground truncate w-24" title={expectation.planReference}>
-                  {expectation.planReference}
+                {/* Adviser */}
+                <span className="text-xs text-muted-foreground truncate w-20" title={`Adviser: ${expectation.adviserName}`}>
+                  {expectation.adviserName.split(' ')[1] || expectation.adviserName}
+                </span>
+                
+                {/* Superbia Company */}
+                <span className="text-xs text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded truncate shrink-0" title={`Company: ${expectation.superbiaCompany}`}>
+                  {expectation.superbiaCompany === 'Furnley House' ? 'FH' : 
+                   expectation.superbiaCompany === 'Headleys' ? 'HL' : 'AW'}
                 </span>
                 
                 {/* Fee Category */}
