@@ -5,6 +5,7 @@ export interface PaymentLineItem {
   clientName: string;
   planReference: string;
   agencyCode?: string;
+  feeCategory?: 'initial' | 'ongoing';
   amount: number;
   description: string;
   status: 'unmatched' | 'matched' | 'approved_unmatched';

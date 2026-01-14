@@ -249,6 +249,18 @@ export function StatementItemList() {
                     {item.planReference}
                   </span>
                   
+                  {/* Fee Category */}
+                  {item.feeCategory && (
+                    <Badge variant="outline" className={cn(
+                      "text-xs h-4 shrink-0",
+                      item.feeCategory === 'initial' 
+                        ? "bg-amber-500/10 text-amber-600 border-amber-500/30" 
+                        : "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                    )}>
+                      {item.feeCategory === 'initial' ? 'Initial' : 'Ongoing'}
+                    </Badge>
+                  )}
+                  
                   {/* Agency Code */}
                   {item.agencyCode && (
                     <span className="text-xs text-muted-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded shrink-0" title="Agency Code">

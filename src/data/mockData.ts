@@ -105,6 +105,7 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
       clientName,
       planReference,
       agencyCode,
+      feeCategory,
       amount: lineItemAmount,
       description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee`,
       status: 'unmatched'
