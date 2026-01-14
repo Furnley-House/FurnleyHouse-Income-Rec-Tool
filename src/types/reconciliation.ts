@@ -4,6 +4,7 @@ export interface PaymentLineItem {
   id: string;
   clientName: string;
   planReference: string;
+  agencyCode?: string;
   amount: number;
   description: string;
   status: 'unmatched' | 'matched' | 'approved_unmatched';
@@ -37,6 +38,10 @@ export interface Payment {
   reconciledAt?: string;
   reconciledBy?: string;
   lineItems: PaymentLineItem[];
+  // Context for expectation filtering
+  includedSuperbiaCompanies?: string[];
+  dateRangeStart?: string;
+  dateRangeEnd?: string;
 }
 
 export interface Expectation {
@@ -50,6 +55,8 @@ export interface Expectation {
   feeType: 'management' | 'performance' | 'advisory' | 'custody';
   description: string;
   providerName: string;
+  adviserName: string;
+  superbiaCompany: string;
   status: 'unmatched' | 'partial' | 'matched';
   allocatedAmount: number;
   remainingAmount: number;

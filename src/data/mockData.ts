@@ -21,6 +21,19 @@ const clientNames = [
   'Ms C Anderson', 'Mr D Walker', 'Mrs P Robinson'
 ];
 
+// Superbia company names
+const superbiaCompanies = ['Furnley House', 'Headleys', 'Anchor Wealth'];
+
+// Adviser names
+const adviserNames = [
+  'James Mitchell', 'Sarah Thompson', 'Michael Carter', 
+  'Emma Williams', 'David Brown', 'Rachel Green',
+  'Andrew Taylor', 'Lisa Anderson', 'Robert Wilson'
+];
+
+// Agency codes (used on statements)
+const agencyCodes = ['AG001', 'AG002', 'AG003', 'FH001', 'FH002', 'HL001', 'HL002', 'AW001', 'AW002'];
+
 // Fee types
 const feeTypes: Array<'management' | 'performance' | 'advisory' | 'custody'> = [
   'management', 'performance', 'advisory', 'custody'
@@ -58,6 +71,9 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
     const planReference = `PL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     const feeCategory = feeCategories[Math.floor(Math.random() * feeCategories.length)];
     const feeType = feeTypes[Math.floor(Math.random() * feeTypes.length)];
+    const superbiaCompany = superbiaCompanies[Math.floor(Math.random() * superbiaCompanies.length)];
+    const adviserName = adviserNames[Math.floor(Math.random() * adviserNames.length)];
+    const agencyCode = agencyCodes[Math.floor(Math.random() * agencyCodes.length)];
     
     // Generate line item with slight variance from expected (simulating provider paying slightly different)
     const varianceFactor = 1 + (Math.random() - 0.5) * 0.04; // ±2% variance
@@ -76,6 +92,8 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
       feeType,
       description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee for Q4 2024`,
       providerName: provider,
+      adviserName,
+      superbiaCompany,
       status: 'unmatched',
       allocatedAmount: 0,
       remainingAmount: expectedAmount,
@@ -86,6 +104,7 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
       id: generateId(),
       clientName,
       planReference,
+      agencyCode,
       amount: lineItemAmount,
       description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee`,
       status: 'unmatched'
