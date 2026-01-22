@@ -46,15 +46,19 @@ const feeCategories: Array<'initial' | 'ongoing'> = ['initial', 'ongoing'];
 const randomAmount = (min: number, max: number) => 
   Math.round((Math.random() * (max - min) + min) * 100) / 100;
 
-// Generate random date within current month
-const randomDate = () => {
-  const now = new Date();
+// Generate date within a specific month (for aligning expectations with payments)
+const generateDateForMonth = (year: number, month: number) => {
   const day = Math.floor(Math.random() * 28) + 1;
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
-// Generate expectations for a provider (and corresponding line items)
-const generateExpectationsAndLineItems = (provider: string, count: number): { expectations: Expectation[], lineItems: PaymentLineItem[] } => {
+// Generate expectations for a provider (and corresponding line items) for a specific month
+const generateExpectationsAndLineItems = (
+  provider: string, 
+  count: number, 
+  paymentYear: number = 2024, 
+  paymentMonth: number = 11 // 0-indexed, 11 = December
+): { expectations: Expectation[], lineItems: PaymentLineItem[] } => {
   const expectations: Expectation[] = [];
   const lineItems: PaymentLineItem[] = [];
   const usedClients = new Set<string>();
@@ -81,16 +85,19 @@ const generateExpectationsAndLineItems = (provider: string, count: number): { ex
     
     const expectationId = generateId();
     
+    // Calculation date aligns with the payment month
+    const calculationDate = generateDateForMonth(paymentYear, paymentMonth);
+    
     expectations.push({
       id: expectationId,
       clientName,
       planReference,
       expectedAmount,
-      calculationDate: randomDate(),
+      calculationDate,
       fundReference: `FND-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       feeCategory,
       feeType,
-      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee for Q4 2024`,
+      description: `${feeCategory === 'initial' ? 'Initial' : 'Ongoing'} ${feeType} fee for ${new Date(paymentYear, paymentMonth).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`,
       providerName: provider,
       adviserName,
       superbiaCompany,
@@ -393,16 +400,17 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
   });
   allExpectations.push(...lg2.expectations);
   
-  // Smaller providers
-  ['Standard Life', 'Scottish Widows'].forEach(provider => {
-    const data = generateExpectationsAndLineItems(provider, Math.floor(Math.random() * 10) + 8);
+  // Smaller providers - December 2024
+  ['Standard Life', 'Scottish Widows'].forEach((provider, idx) => {
+    const data = generateExpectationsAndLineItems(provider, Math.floor(Math.random() * 10) + 8, 2024, 11);
     const sum = data.lineItems.reduce((s, e) => s + e.amount, 0);
+    const day = 10 + idx * 5; // Different days for each provider
     payments.push({
       id: generateId(),
       providerName: provider,
       paymentReference: `${provider.substring(0, 2).toUpperCase()}-2024-12-001`,
       amount: Math.round(sum * 100) / 100,
-      paymentDate: randomDate(),
+      paymentDate: `2024-12-${String(day).padStart(2, '0')}`,
       bankReference: `BACS-${Math.floor(Math.random() * 9000000) + 1000000}`,
       statementItemCount: data.expectations.length,
       status: 'unreconciled',
