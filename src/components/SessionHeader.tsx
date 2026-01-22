@@ -16,6 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { DataImport } from './DataImport';
 
 export function SessionHeader() {
   const { 
@@ -127,6 +128,8 @@ export function SessionHeader() {
           </Popover>
           
           {/* Action Buttons */}
+          <DataImport />
+          
           <Button 
             onClick={autoMatchCurrentPayment}
             disabled={!selectedPaymentId}
