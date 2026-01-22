@@ -1,0 +1,407 @@
+import { useState, useMemo } from 'react';
+import { useReconciliationStore } from '@/store/reconciliationStore';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Slider } from '@/components/ui/slider';
+import {
+  Zap,
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  AlertTriangle,
+  TrendingDown,
+  Settings2,
+  Play,
+  SkipForward
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { PendingMatch } from '@/types/reconciliation';
+
+interface TolerancePassResult {
+  tolerance: number;
+  matchCount: number;
+  matches: PendingMatch[];
+}
+
+export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: () => void }) {
+  const {
+    getSelectedPayment,
+    getRelevantExpectations,
+    pendingMatches,
+    addPendingMatch,
+    confirmPendingMatches,
+    tolerance,
+    setTolerance
+  } = useReconciliationStore();
+  
+  const payment = getSelectedPayment();
+  const expectations = getRelevantExpectations();
+  
+  const [currentToleranceStep, setCurrentToleranceStep] = useState(0);
+  const [passResults, setPassResults] = useState<TolerancePassResult[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  
+  const toleranceSteps = [0, 0.5, 1, 2, 5];
+  
+  if (!payment) return null;
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+      minimumFractionDigits: 2
+    }).format(amount);
+  };
+  
+  // Calculate potential matches at each tolerance level
+  const calculateMatchesAtTolerance = (tolerancePercent: number): PendingMatch[] => {
+    const pendingLineItemIds = pendingMatches.map(pm => pm.lineItemId);
+    const pendingExpectationIds = pendingMatches.map(pm => pm.expectationId);
+    
+    const unmatchedLineItems = payment.lineItems.filter(li =>
+      li.status === 'unmatched' && !pendingLineItemIds.includes(li.id)
+    );
+    
+    const unmatchedExpectations = expectations.filter(e =>
+      e.status === 'unmatched' && !pendingExpectationIds.includes(e.id)
+    );
+    
+    const matches: PendingMatch[] = [];
+    const usedExpectationIds = new Set<string>();
+    
+    for (const lineItem of unmatchedLineItems) {
+      const matchingExpectation = unmatchedExpectations.find(e =>
+        e.planReference === lineItem.planReference &&
+        !usedExpectationIds.has(e.id)
+      );
+      
+      if (matchingExpectation) {
+        const variance = lineItem.amount - matchingExpectation.expectedAmount;
+        const variancePercentage = matchingExpectation.expectedAmount > 0
+          ? (variance / matchingExpectation.expectedAmount) * 100
+          : 0;
+        
+        if (Math.abs(variancePercentage) <= tolerancePercent) {
+          usedExpectationIds.add(matchingExpectation.id);
+          matches.push({
+            lineItemId: lineItem.id,
+            expectationId: matchingExpectation.id,
+            lineItemAmount: lineItem.amount,
+            expectedAmount: matchingExpectation.expectedAmount,
+            variance,
+            variancePercentage,
+            isWithinTolerance: true
+          });
+        }
+      }
+    }
+    
+    return matches;
+  };
+  
+  // Preview counts for each tolerance level
+  const tolerancePreview = useMemo(() => {
+    return toleranceSteps.map(tol => ({
+      tolerance: tol,
+      matchCount: calculateMatchesAtTolerance(tol).length
+    }));
+  }, [payment.lineItems, expectations, pendingMatches]);
+  
+  const totalItems = payment.lineItems.length;
+  const processedItems = payment.lineItems.filter(li => 
+    li.status === 'matched' || li.status === 'approved_unmatched'
+  ).length;
+  const pendingCount = pendingMatches.length;
+  const remainingItems = totalItems - processedItems - pendingCount;
+  
+  const progressPercentage = ((processedItems + pendingCount) / totalItems) * 100;
+  
+  const runAutoMatchAtTolerance = (tolerancePercent: number) => {
+    const matches = calculateMatchesAtTolerance(tolerancePercent);
+    
+    // Add all matches to pending
+    matches.forEach(match => {
+      addPendingMatch(match.lineItemId, match.expectationId);
+    });
+    
+    // Record the pass result
+    setPassResults(prev => [...prev, {
+      tolerance: tolerancePercent,
+      matchCount: matches.length,
+      matches
+    }]);
+    
+    return matches.length;
+  };
+  
+  const handleRunCurrentPass = () => {
+    if (currentToleranceStep >= toleranceSteps.length) return;
+    
+    setIsRunning(true);
+    const currentTolerance = toleranceSteps[currentToleranceStep];
+    
+    // Update global tolerance
+    setTolerance(currentTolerance);
+    
+    const matchCount = runAutoMatchAtTolerance(currentTolerance);
+    
+    setCurrentToleranceStep(prev => prev + 1);
+    setIsRunning(false);
+  };
+  
+  const handleConfirmAndContinue = () => {
+    if (pendingMatches.length > 0) {
+      confirmPendingMatches(`Prescreening batch - matched at tolerance levels: ${passResults.map(p => `${p.tolerance}%`).join(', ')}`);
+      setPassResults([]);
+    }
+  };
+  
+  const getToleranceLabel = (tol: number) => {
+    if (tol === 0) return 'Exact';
+    if (tol <= 0.5) return 'Tight';
+    if (tol <= 2) return 'Normal';
+    return 'Loose';
+  };
+  
+  const getToleranceColor = (tol: number) => {
+    if (tol === 0) return 'bg-success/10 text-success border-success/30';
+    if (tol <= 0.5) return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+    if (tol <= 2) return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
+    return 'bg-orange-500/10 text-orange-600 border-orange-500/30';
+  };
+  
+  return (
+    <div className="flex-1 flex flex-col h-full bg-background">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-border bg-primary/5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Zap className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground">Prescreening Mode</h2>
+              <p className="text-xs text-muted-foreground">
+                Progressive tolerance matching for {totalItems} items
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onSwitchToStandard}>
+            <SkipForward className="h-4 w-4 mr-2" />
+            Switch to Standard View
+          </Button>
+        </div>
+      </div>
+      
+      {/* Progress Overview */}
+      <div className="px-4 py-3 border-b border-border bg-muted/30">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">Processing Progress</span>
+          <span className="text-sm text-muted-foreground">
+            {processedItems + pendingCount} / {totalItems} items
+          </span>
+        </div>
+        <Progress value={progressPercentage} className="h-2" />
+        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+          <span>{processedItems} confirmed</span>
+          <span>{pendingCount} pending</span>
+          <span>{remainingItems} remaining</span>
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Tolerance Control */}
+        <div className="w-80 border-r border-border p-4 flex flex-col">
+          <h3 className="font-medium text-sm mb-4 flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            Tolerance Passes
+          </h3>
+          
+          <div className="space-y-2 flex-1">
+            {toleranceSteps.map((tol, index) => {
+              const preview = tolerancePreview.find(p => p.tolerance === tol);
+              const passResult = passResults.find(p => p.tolerance === tol);
+              const isCompleted = index < currentToleranceStep;
+              const isCurrent = index === currentToleranceStep;
+              const isPending = index > currentToleranceStep;
+              
+              return (
+                <div
+                  key={tol}
+                  className={cn(
+                    "p-3 rounded-lg border transition-colors",
+                    isCompleted && "bg-success/5 border-success/30",
+                    isCurrent && "bg-primary/5 border-primary/30 ring-1 ring-primary/20",
+                    isPending && "bg-muted/30 border-border opacity-60"
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      {isCompleted ? (
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                      ) : isCurrent ? (
+                        <Circle className="h-4 w-4 text-primary fill-primary/20" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-muted-foreground/40" />
+                      )}
+                      <span className="font-medium text-sm">
+                        {tol === 0 ? 'Exact Match' : `${tol}% Tolerance`}
+                      </span>
+                    </div>
+                    <Badge variant="outline" className={cn("text-xs h-5", getToleranceColor(tol))}>
+                      {getToleranceLabel(tol)}
+                    </Badge>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-xs text-muted-foreground ml-6">
+                    {isCompleted && passResult ? (
+                      <span className="text-success">{passResult.matchCount} items matched</span>
+                    ) : isCurrent ? (
+                      <span>{preview?.matchCount || 0} potential matches</span>
+                    ) : (
+                      <span>{preview?.matchCount || 0} available</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="mt-4 space-y-2">
+            {currentToleranceStep < toleranceSteps.length && remainingItems > 0 && (
+              <Button
+                onClick={handleRunCurrentPass}
+                disabled={isRunning}
+                className="w-full gap-2"
+              >
+                <Play className="h-4 w-4" />
+                Run {toleranceSteps[currentToleranceStep] === 0 ? 'Exact' : `${toleranceSteps[currentToleranceStep]}%`} Pass
+              </Button>
+            )}
+            
+            {pendingMatches.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={handleConfirmAndContinue}
+                className="w-full gap-2"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Confirm {pendingMatches.length} Matches
+              </Button>
+            )}
+            
+            {remainingItems > 0 && currentToleranceStep >= toleranceSteps.length && (
+              <div className="text-center py-2">
+                <p className="text-sm text-muted-foreground mb-2">
+                  {remainingItems} items remain unmatched
+                </p>
+                <Button variant="outline" onClick={onSwitchToStandard} className="gap-2">
+                  <ArrowRight className="h-4 w-4" />
+                  Review Manually
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Right: Results Summary */}
+        <div className="flex-1 p-4 flex flex-col">
+          <h3 className="font-medium text-sm mb-4 flex items-center gap-2">
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            Match Results
+          </h3>
+          
+          {pendingMatches.length > 0 ? (
+            <ScrollArea className="flex-1">
+              <div className="space-y-1">
+                {pendingMatches.map((pm) => {
+                  const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
+                  
+                  return (
+                    <div
+                      key={pm.lineItemId}
+                      className="p-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-3"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {lineItem?.clientName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {lineItem?.planReference}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold tabular-nums">
+                          {formatCurrency(pm.lineItemAmount)}
+                        </p>
+                        <p className={cn(
+                          "text-xs tabular-nums",
+                          Math.abs(pm.variancePercentage) <= 0.5 ? "text-success" :
+                          Math.abs(pm.variancePercentage) <= 2 ? "text-amber-600" :
+                          "text-orange-600"
+                        )}>
+                          {pm.variancePercentage >= 0 ? '+' : ''}{pm.variancePercentage.toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          ) : passResults.length > 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
+                <p className="text-lg font-medium">Matches Confirmed</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Run the next pass to find more matches
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <Zap className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-lg font-medium text-muted-foreground">Ready to Start</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Click "Run Exact Pass" to begin prescreening
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Summary Stats */}
+          {passResults.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-2xl font-bold text-primary">
+                    {passResults.reduce((sum, p) => sum + p.matchCount, 0)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Total Matched</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-amber-600">
+                    {remainingItems}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Remaining</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-success">
+                    {passResults.length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Passes Run</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
