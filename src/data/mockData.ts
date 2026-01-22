@@ -286,8 +286,8 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
   });
   allExpectations.push(...aviva4.expectations);
   
-  // Provider C: Legal & General - 2 large payments
-  const lg1 = generateExpectationsAndLineItems('Legal & General', 45);
+  // Provider C: Legal & General - 2 large payments (one triggers prescreening mode)
+  const lg1 = generateExpectationsAndLineItems('Legal & General', 75);
   const lgSum1 = lg1.lineItems.reduce((sum, e) => sum + e.amount, 0);
   payments.push({
     id: generateId(),
@@ -296,12 +296,12 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     amount: Math.round(lgSum1 * 100) / 100,
     paymentDate: '2024-12-09',
     bankReference: 'CHAPS-8891234',
-    statementItemCount: 45,
+    statementItemCount: 75,
     status: 'unreconciled',
     reconciledAmount: 0,
     remainingAmount: Math.round(lgSum1 * 100) / 100,
     matchedExpectationIds: [],
-    notes: '',
+    notes: 'Large payment - prescreening recommended',
     lineItems: lg1.lineItems
   });
   allExpectations.push(...lg1.expectations);
