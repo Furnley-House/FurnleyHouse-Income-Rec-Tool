@@ -113,6 +113,7 @@ export interface PaymentFilters {
 export interface ExpectationFilters {
   searchTerm: string;
   status: 'all' | 'unmatched' | 'partial' | 'matched';
+  monthRange: 'payment' | 'extended' | 'all'; // payment = payment month only, extended = +/- 1 month, all = no date filter
 }
 
 export interface ReconciliationSession {

@@ -111,7 +111,8 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   
   expectationFilters: {
     searchTerm: '',
-    status: 'all'
+    status: 'all',
+    monthRange: 'payment' // Default to payment month only
   },
   
   tolerance: 5, // 5% default tolerance
@@ -442,6 +443,31 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     if (!payment) return [];
     
     let filtered = expectations.filter(e => e.providerName === payment.providerName);
+    
+    // Apply month-based filtering based on payment date
+    if (expectationFilters.monthRange !== 'all' && payment.paymentDate) {
+      const paymentDate = new Date(payment.paymentDate);
+      const paymentYear = paymentDate.getFullYear();
+      const paymentMonth = paymentDate.getMonth();
+      
+      filtered = filtered.filter(e => {
+        if (!e.calculationDate) return true; // Include if no calculation date
+        
+        const calcDate = new Date(e.calculationDate);
+        const calcYear = calcDate.getFullYear();
+        const calcMonth = calcDate.getMonth();
+        
+        if (expectationFilters.monthRange === 'payment') {
+          // Exact month match
+          return calcYear === paymentYear && calcMonth === paymentMonth;
+        } else if (expectationFilters.monthRange === 'extended') {
+          // +/- 1 month range
+          const monthDiff = (paymentYear - calcYear) * 12 + (paymentMonth - calcMonth);
+          return Math.abs(monthDiff) <= 1;
+        }
+        return true;
+      });
+    }
     
     if (expectationFilters.searchTerm) {
       const term = expectationFilters.searchTerm.toLowerCase();
