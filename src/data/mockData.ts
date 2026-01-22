@@ -287,8 +287,66 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
   allExpectations.push(...aviva4.expectations);
   
   // Provider C: Legal & General - 2 large payments (one triggers prescreening mode)
-  const lg1 = generateExpectationsAndLineItems('Legal & General', 75);
-  const lgSum1 = lg1.lineItems.reduce((sum, e) => sum + e.amount, 0);
+  const lg1 = generateExpectationsAndLineItems('Legal & General', 70);
+  
+  // Add orphan line items (no matching expectations) to test prescreening edge cases
+  const orphanLineItems: PaymentLineItem[] = [
+    {
+      id: generateId(),
+      clientName: 'Mr X Unknown',
+      planReference: 'PL-ORPHAN001',
+      agencyCode: 'AG999',
+      feeCategory: 'ongoing',
+      amount: 2450.00,
+      description: 'Ongoing management fee - NO EXPECTATION ON FILE',
+      status: 'unmatched'
+    },
+    {
+      id: generateId(),
+      clientName: 'Mrs Y Mystery',
+      planReference: 'PL-ORPHAN002',
+      agencyCode: 'AG998',
+      feeCategory: 'initial',
+      amount: 8750.50,
+      description: 'Initial advisory fee - CLIENT NOT IN SYSTEM',
+      status: 'unmatched'
+    },
+    {
+      id: generateId(),
+      clientName: 'Mr Z Transferred',
+      planReference: 'PL-ORPHAN003',
+      agencyCode: 'FH999',
+      feeCategory: 'ongoing',
+      amount: 1234.56,
+      description: 'Ongoing custody fee - POLICY TRANSFERRED OUT',
+      status: 'unmatched'
+    },
+    {
+      id: generateId(),
+      clientName: 'Dr A Cancelled',
+      planReference: 'PL-ORPHAN004',
+      agencyCode: 'HL999',
+      feeCategory: 'ongoing',
+      amount: 3890.25,
+      description: 'Ongoing performance fee - POLICY CANCELLED',
+      status: 'unmatched'
+    },
+    {
+      id: generateId(),
+      clientName: 'Ms B Duplicate',
+      planReference: 'PL-ORPHAN005',
+      agencyCode: 'AW999',
+      feeCategory: 'initial',
+      amount: 5670.00,
+      description: 'Initial management fee - POSSIBLE DUPLICATE',
+      status: 'unmatched'
+    }
+  ];
+  
+  // Combine regular line items with orphans
+  const allLg1LineItems = [...lg1.lineItems, ...orphanLineItems];
+  const lgSum1 = allLg1LineItems.reduce((sum, e) => sum + e.amount, 0);
+  
   payments.push({
     id: generateId(),
     providerName: 'Legal & General',
@@ -296,13 +354,13 @@ export const generateMockData = (): { payments: Payment[], expectations: Expecta
     amount: Math.round(lgSum1 * 100) / 100,
     paymentDate: '2024-12-09',
     bankReference: 'CHAPS-8891234',
-    statementItemCount: 75,
+    statementItemCount: allLg1LineItems.length,
     status: 'unreconciled',
     reconciledAmount: 0,
     remainingAmount: Math.round(lgSum1 * 100) / 100,
     matchedExpectationIds: [],
-    notes: 'Large payment - prescreening recommended',
-    lineItems: lg1.lineItems
+    notes: 'Large payment - prescreening recommended. Contains 5 orphan items with no matching expectations.',
+    lineItems: allLg1LineItems
   });
   allExpectations.push(...lg1.expectations);
   
