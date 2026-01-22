@@ -35,6 +35,7 @@ interface ReconciliationStore {
   setTolerance: (tolerance: number) => void;
   setPaymentFilters: (filters: Partial<PaymentFilters>) => void;
   setExpectationFilters: (filters: Partial<ExpectationFilters>) => void;
+  importData: (payments: Payment[], expectations: Expectation[]) => void;
   
   // Derived getters
   getSelectedPayment: () => Payment | null;
@@ -412,6 +413,21 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   
   setExpectationFilters: (filters) => {
     set(state => ({ expectationFilters: { ...state.expectationFilters, ...filters } }));
+  },
+  
+  importData: (newPayments, newExpectations) => {
+    // Merge or replace data based on whether we have new data
+    const payments = newPayments.length > 0 ? newPayments : get().payments;
+    const expectations = newExpectations.length > 0 ? newExpectations : get().expectations;
+    
+    set({
+      payments,
+      expectations,
+      matches: [],
+      selectedPaymentId: null,
+      pendingMatches: [],
+      statistics: calculateStatistics(payments, expectations, [])
+    });
   },
   
   getSelectedPayment: () => {
