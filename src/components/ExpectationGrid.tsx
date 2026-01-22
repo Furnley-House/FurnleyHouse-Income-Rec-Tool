@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Calendar
 } from 'lucide-react';
 import {
   Select,
@@ -52,6 +53,13 @@ export function ExpectationGrid() {
   
   const payment = getSelectedPayment();
   const allExpectations = getRelevantExpectations();
+  
+  // Format payment month for display
+  const getPaymentMonthLabel = () => {
+    if (!payment?.paymentDate) return 'No date';
+    const date = new Date(payment.paymentDate);
+    return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  };
   
   // Poll for selected line item from StatementItemList
   useEffect(() => {
@@ -197,6 +205,22 @@ export function ExpectationGrid() {
                 className="pl-7 h-6 text-xs w-28"
               />
             </div>
+            <Select
+              value={expectationFilters.monthRange}
+              onValueChange={(value: 'payment' | 'extended' | 'all') => 
+                setExpectationFilters({ monthRange: value })
+              }
+            >
+              <SelectTrigger className="w-28 h-6 text-xs">
+                <Calendar className="h-3 w-3 mr-1 shrink-0" />
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="payment">{getPaymentMonthLabel()}</SelectItem>
+                <SelectItem value="extended">±1 Month</SelectItem>
+                <SelectItem value="all">All Dates</SelectItem>
+              </SelectContent>
+            </Select>
             <Select
               value={expectationFilters.status}
               onValueChange={(value: 'all' | 'unmatched' | 'partial' | 'matched') => 
