@@ -9,10 +9,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, FileText, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, X, Download } from 'lucide-react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { Payment, Expectation, PaymentLineItem } from '@/types/reconciliation';
 import { toast } from 'sonner';
+import { 
+  samplePaymentsCSV, 
+  sampleLineItemsCSV, 
+  sampleExpectationsCSV, 
+  downloadCSV 
+} from '@/data/sampleTemplates';
 
 interface ImportResult {
   success: boolean;
@@ -430,30 +436,63 @@ export function DataImport() {
 
           <TabsContent value="format" className="mt-4">
             <div className="space-y-4 text-sm">
-              <div>
-                <h4 className="font-semibold mb-2">Payments CSV Headers</h4>
-                <code className="block bg-muted p-2 rounded text-xs overflow-x-auto">
-                  Payment_ID, Provider_Name, Payment_Reference, Amount, Payment_Date, Bank_Reference, Status, Notes
-                </code>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold mb-1">Payments CSV</h4>
+                  <code className="block bg-muted p-2 rounded text-xs overflow-x-auto max-w-md">
+                    Payment_ID, Provider_Name, Payment_Reference, Amount, Payment_Date, Bank_Reference, Status, Notes
+                  </code>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => downloadCSV(samplePaymentsCSV, 'sample_payments.csv')}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Sample
+                </Button>
               </div>
 
-              <div>
-                <h4 className="font-semibold mb-2">Payment Line Items CSV Headers</h4>
-                <code className="block bg-muted p-2 rounded text-xs overflow-x-auto">
-                  Line_Item_ID, Payment, Client_Name, Plan_Reference, Agency_Code, Fee_Category, Amount, Description, Status
-                </code>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold mb-1">Payment Line Items CSV</h4>
+                  <code className="block bg-muted p-2 rounded text-xs overflow-x-auto max-w-md">
+                    Line_Item_ID, Payment, Client_Name, Plan_Reference, Agency_Code, Fee_Category, Amount, Status
+                  </code>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => downloadCSV(sampleLineItemsCSV, 'sample_line_items.csv')}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Sample
+                </Button>
               </div>
 
-              <div>
-                <h4 className="font-semibold mb-2">Expectations CSV Headers</h4>
-                <code className="block bg-muted p-2 rounded text-xs overflow-x-auto">
-                  Expectation_ID, Client_Name, Plan_Reference, Expected_Amount, Calculation_Date, Fund_Reference, Fee_Category, Fee_Type, Provider_Name, Adviser_Name, Superbia_Company, Status
-                </code>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold mb-1">Expectations CSV</h4>
+                  <code className="block bg-muted p-2 rounded text-xs overflow-x-auto max-w-md">
+                    Expectation_ID, Client_Name, Plan_Reference, Expected_Amount, Fee_Category, Provider_Name, Adviser_Name, Superbia_Company, Status
+                  </code>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => downloadCSV(sampleExpectationsCSV, 'sample_expectations.csv')}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Sample
+                </Button>
               </div>
 
-              <p className="text-muted-foreground">
-                Both Zoho API field names (e.g., Payment_ID) and camelCase alternatives (e.g., paymentId) are supported.
-              </p>
+              <div className="bg-muted/50 p-3 rounded-lg mt-4">
+                <p className="text-muted-foreground text-xs">
+                  <strong>Tip:</strong> Download the sample files above, open them in Excel, and use them as templates. 
+                  Both Zoho API field names (e.g., Payment_ID) and camelCase alternatives (e.g., paymentId) are supported.
+                </p>
+              </div>
             </div>
           </TabsContent>
         </Tabs>
