@@ -281,8 +281,13 @@ export function ExpectationGrid() {
                   {expectation.clientName}
                 </span>
                 
+                {/* Policy Reference */}
+                <span className="text-xs text-muted-foreground truncate w-20" title={expectation.planReference}>
+                  {expectation.planReference}
+                </span>
+                
                 {/* Adviser */}
-                <span className="text-xs text-muted-foreground truncate w-20" title={`Adviser: ${expectation.adviserName}`}>
+                <span className="text-xs text-muted-foreground truncate w-16" title={`Adviser: ${expectation.adviserName}`}>
                   {expectation.adviserName.split(' ')[1] || expectation.adviserName}
                 </span>
                 
