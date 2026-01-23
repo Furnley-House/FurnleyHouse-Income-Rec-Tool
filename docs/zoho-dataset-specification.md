@@ -105,16 +105,29 @@ Records of confirmed matches between payment line items and expectations.
 
 ## 5. Providers Dataset
 
-Reference data for payment providers.
+Reference data for payment providers, supporting parent-child relationships for provider brands/codes.
 
 | Field Name | API Name | Data Type | Required | Description |
 |------------|----------|-----------|----------|-------------|
 | Provider ID | `Provider_ID` | Auto Number | Yes | Unique identifier |
-| Provider Name | `Provider_Name` | Single Line | Yes | Provider name (e.g., Aegon, Aviva) |
-| Provider Code | `Provider_Code` | Single Line | No | Short code for provider |
+| Provider Name | `Provider_Name` | Single Line | Yes | Provider name or brand (e.g., Aviva Pensions) |
+| Provider Code | `Provider_Code` | Single Line | No | Short code used in statements |
+| Parent Provider | `Parent_Provider` | Lookup (Providers) | No | Parent provider for grouped brands |
+| Is Payment Source | `Is_Payment_Source` | Checkbox | Yes | True if this provider makes bulk payments |
 | Active | `Active` | Checkbox | Yes | Whether provider is active |
 | Contact Email | `Contact_Email` | Email | No | Provider contact email |
 | Notes | `Notes` | Multi Line | No | Additional notes |
+
+### Provider Hierarchy Example
+
+```
+Aviva (Is_Payment_Source: Yes)
+├── Aviva Pensions (Parent: Aviva)
+├── Aviva Group (Parent: Aviva)
+└── Aviva Investments (Parent: Aviva)
+```
+
+When matching, expectations tagged with any child provider will match to payments from the parent provider.
 
 ---
 
