@@ -5,6 +5,8 @@ export interface PaymentLineItem {
   clientName: string;
   planReference: string;
   agencyCode?: string;
+  adviserName?: string;
+  feeType?: string;
   feeCategory?: 'initial' | 'ongoing';
   amount: number;
   description: string;

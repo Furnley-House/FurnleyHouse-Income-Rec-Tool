@@ -6,13 +6,13 @@ PAY-0001,Aegon,AEG-2024-12-001,45250.00,2024-12-15,BACS-789456,unreconciled,Dece
 PAY-0002,Aviva,AVV-2024-11-002,32180.50,2024-11-18,BACS-789457,unreconciled,November trail commission,,2024-11-01,2024-11-30
 PAY-0003,Legal & General,LG-2024-12-003,18945.25,2024-12-20,BACS-789458,unreconciled,December fee payment,Anchor Wealth,2024-12-01,2024-12-31`;
 
-export const sampleLineItemsCSV = `Line_Item_ID,Payment,Client_Name,Plan_Reference,Agency_Code,Fee_Category,Amount,Description,Status
-LI-00001,PAY-0001,Mr J Smith,POL-123456,AG001,ongoing,1250.00,December management fee,unmatched
-LI-00002,PAY-0001,Mrs S Johnson,POL-234567,AG001,ongoing,875.50,December trail,unmatched
-LI-00003,PAY-0001,Mr R Williams,POL-345678,AG002,initial,2500.00,Initial commission,unmatched
-LI-00004,PAY-0002,Ms A Brown,POL-456789,AG001,ongoing,1150.25,November fee,unmatched
-LI-00005,PAY-0002,Mr T Davis,POL-567890,AG003,ongoing,980.00,November trail,unmatched
-LI-00006,PAY-0003,Mrs P Wilson,POL-678901,AG002,ongoing,1425.75,December management fee,unmatched`;
+export const sampleLineItemsCSV = `Line_Item_ID,Payment,Client_Name,Plan_Reference,Agency_Code,Adviser_Name,Fee_Type,Fee_Category,Amount,Description,Status
+LI-00001,PAY-0001,Mr J Smith,POL-123456,AG001,James Anderson,management,ongoing,1250.00,December management fee,unmatched
+LI-00002,PAY-0001,Mrs S Johnson,POL-234567,AG001,Sarah Mitchell,management,ongoing,875.50,December trail,unmatched
+LI-00003,PAY-0001,Mr R Williams,POL-345678,AG002,James Anderson,advisory,initial,2500.00,Initial commission,unmatched
+LI-00004,PAY-0002,Ms A Brown,POL-456789,AG001,David Thompson,management,ongoing,1150.25,November fee,unmatched
+LI-00005,PAY-0002,Mr T Davis,POL-567890,AG003,Sarah Mitchell,performance,ongoing,980.00,November trail,unmatched
+LI-00006,PAY-0003,Mrs P Wilson,POL-678901,AG002,David Thompson,custody,ongoing,1425.75,December management fee,unmatched`;
 
 // Note: Calculation_Date determines which payment month an expectation should match to
 export const sampleExpectationsCSV = `Expectation_ID,Client_Name,Plan_Reference,Expected_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Provider_Name,Adviser_Name,Superbia_Company,Status
