@@ -100,9 +100,57 @@ export function ExpectationGrid() {
   const matchedCount = allExpectations.filter(e => e.status === 'matched').length;
   
   // Filter out matched items unless showMatched is true
-  const expectations = allExpectations.filter(exp => {
+  const filteredExpectations = allExpectations.filter(exp => {
     if (showMatched) return true;
     return exp.status !== 'matched';
+  });
+  
+  // Sort expectations to show suggested matches at the top when a line item is selected
+  const expectations = [...filteredExpectations].sort((a, b) => {
+    if (!selectedLineItem) return 0;
+    
+    // Score system: higher score = better match, appears first
+    const scoreExpectation = (exp: typeof a) => {
+      let score = 0;
+      
+      // Primary: Policy reference match (most important)
+      const lineItemRef = selectedLineItem.planReference?.toLowerCase().trim() || '';
+      const expRef = exp.planReference?.toLowerCase().trim() || '';
+      
+      if (lineItemRef && expRef) {
+        if (lineItemRef === expRef) {
+          score += 1000; // Exact policy reference match
+        } else if (lineItemRef.includes(expRef) || expRef.includes(lineItemRef)) {
+          score += 500; // Partial policy reference match
+        }
+      }
+      
+      // Secondary: Client name match
+      const lineItemClient = selectedLineItem.clientName?.toLowerCase().trim() || '';
+      const expClient = exp.clientName?.toLowerCase().trim() || '';
+      
+      if (lineItemClient && expClient) {
+        if (lineItemClient === expClient) {
+          score += 100; // Exact client name match
+        } else if (lineItemClient.includes(expClient) || expClient.includes(lineItemClient)) {
+          score += 50; // Partial client name match
+        } else {
+          // Check for word-level matches (handles "John Smith" vs "Smith, John")
+          const lineItemWords = lineItemClient.split(/[\s,]+/).filter(w => w.length > 1);
+          const expWords = expClient.split(/[\s,]+/).filter(w => w.length > 1);
+          const matchingWords = lineItemWords.filter(w => expWords.some(ew => ew.includes(w) || w.includes(ew)));
+          score += matchingWords.length * 10;
+        }
+      }
+      
+      return score;
+    };
+    
+    const scoreA = scoreExpectation(a);
+    const scoreB = scoreExpectation(b);
+    
+    // Sort by score descending (higher = better match = first)
+    return scoreB - scoreA;
   });
   
   const handleMatchClick = (expectationId: string) => {
