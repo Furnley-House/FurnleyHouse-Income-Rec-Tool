@@ -306,7 +306,7 @@ export function ExpectationGrid() {
                 </span>
                 
                 {/* Policy Reference */}
-                <span className="text-xs text-muted-foreground truncate w-20" title={expectation.planReference}>
+                <span className="text-xs text-muted-foreground truncate w-36" title={expectation.planReference}>
                   {expectation.planReference}
                 </span>
                 
