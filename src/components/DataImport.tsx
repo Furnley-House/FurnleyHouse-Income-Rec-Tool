@@ -44,6 +44,26 @@ export function DataImport() {
 
   const { importData } = useReconciliationStore();
 
+  const getString = (row: Record<string, unknown>, keys: string[], fallback = '') => {
+    for (const key of keys) {
+      const value = row[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+    }
+    return fallback;
+  };
+
+  const getNumber = (row: Record<string, unknown>, keys: string[], fallback = 0) => {
+    const str = getString(row, keys, String(fallback));
+    const n = parseFloat(String(str).replace(/,/g, ''));
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  // Policy refs are typically like PF00000000D550E. We use a permissive heuristic to catch most real-world exports.
+  const looksLikePolicyReference = (value: string) => {
+    const v = value.trim().replace(/\s+/g, '');
+    return /^PF[0-9A-Z]{6,}$/i.test(v);
+  };
+
   const parseCSV = (text: string): Record<string, string>[] => {
     const lines = text.trim().split('\n');
     if (lines.length < 2) return [];
@@ -142,19 +162,38 @@ export function DataImport() {
 
   const mapToLineItem = (row: Record<string, unknown>, index: number): { paymentId: string; lineItem: PaymentLineItem } | null => {
     try {
-      const paymentId = String(row['Payment'] || row['Payment_ID'] || row['paymentId'] || '');
-      const amount = parseFloat(String(row['Amount'] || row['amount'] || 0));
+      const paymentId = getString(row, ['Payment', 'Payment_ID', 'paymentId']);
+      const amount = getNumber(row, ['Amount', 'amount'], 0);
       
       if (!paymentId || isNaN(amount)) {
         return null;
       }
 
+      // Support both Plan_Reference and Policy_Reference naming (and common variations)
+      let clientName = getString(row, ['Client_Name', 'clientName', 'Client Name']);
+      let planReference = getString(row, [
+        'Plan_Reference',
+        'planReference',
+        'Policy_Reference',
+        'policyReference',
+        'Policy Reference',
+        'PolicyReference',
+      ]);
+
+      // Heuristic fix: some spreadsheets accidentally swap Client_Name and Plan_Reference.
+      if (clientName && planReference && looksLikePolicyReference(clientName) && !looksLikePolicyReference(planReference)) {
+        [clientName, planReference] = [planReference, clientName];
+      }
+
+      // Normalise policy refs (trim + remove internal whitespace)
+      planReference = planReference.replace(/\s+/g, '');
+
       return {
         paymentId,
         lineItem: {
           id: String(row['Line_Item_ID'] || row['id'] || `LI-${String(index + 1).padStart(5, '0')}`),
-          clientName: String(row['Client_Name'] || row['clientName'] || ''),
-          planReference: String(row['Plan_Reference'] || row['planReference'] || ''),
+          clientName,
+          planReference,
           agencyCode: row['Agency_Code'] || row['agencyCode'] ? String(row['Agency_Code'] || row['agencyCode']) : undefined,
           feeCategory: (row['Fee_Category'] || row['feeCategory']) as PaymentLineItem['feeCategory'],
           amount,
@@ -171,17 +210,26 @@ export function DataImport() {
 
   const mapToExpectation = (row: Record<string, unknown>, index: number): Expectation | null => {
     try {
-      const expectedAmount = parseFloat(String(row['Expected_Amount'] || row['expectedAmount'] || 0));
-      const clientName = String(row['Client_Name'] || row['clientName'] || '');
+      const expectedAmount = getNumber(row, ['Expected_Amount', 'expectedAmount', 'Expected Amount'], 0);
+      const clientName = getString(row, ['Client_Name', 'clientName', 'Client Name']);
       
       if (!clientName || isNaN(expectedAmount)) {
         return null;
       }
 
+      let planReference = getString(row, [
+        'Plan_Reference',
+        'planReference',
+        'Policy_Reference',
+        'policyReference',
+        'Policy Reference',
+        'PolicyReference',
+      ]).replace(/\s+/g, '');
+
       return {
         id: String(row['Expectation_ID'] || row['id'] || `EXP-${String(index + 1).padStart(4, '0')}`),
         clientName,
-        planReference: String(row['Plan_Reference'] || row['planReference'] || ''),
+        planReference,
         expectedAmount,
         calculationDate: String(row['Calculation_Date'] || row['calculationDate'] || new Date().toISOString().split('T')[0]),
         fundReference: String(row['Fund_Reference'] || row['fundReference'] || ''),
