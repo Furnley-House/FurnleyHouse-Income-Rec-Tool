@@ -245,7 +245,7 @@ export function StatementItemList() {
                   </span>
                   
                   {/* Policy Reference */}
-                  <span className="text-xs text-muted-foreground truncate w-20" title={item.planReference}>
+                  <span className="text-xs text-muted-foreground truncate w-36" title={item.planReference}>
                     {item.planReference}
                   </span>
                   
