@@ -105,6 +105,11 @@ export function ExpectationGrid() {
     return exp.status !== 'matched';
   });
   
+  // Get selected line item details for sorting (must be before the sort)
+  const selectedLineItem = selectedLineItemId && payment
+    ? payment.lineItems.find(li => li.id === selectedLineItemId)
+    : null;
+  
   // Sort expectations to show suggested matches at the top when a line item is selected
   const expectations = [...filteredExpectations].sort((a, b) => {
     if (!selectedLineItem) return 0;
@@ -193,12 +198,8 @@ export function ExpectationGrid() {
   const dialogVariance = selectedExpForMatch && selectedLineItemId 
     ? calculateVariance(selectedLineItemId, selectedExpForMatch) 
     : null;
-  
-  // Get selected line item details
-  const selectedLineItem = selectedLineItemId && payment
-    ? payment.lineItems.find(li => li.id === selectedLineItemId)
-    : null;
-  
+
+
   return (
     <div className="h-full flex flex-col bg-card">
       {/* Compact Header */}
