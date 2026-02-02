@@ -14,7 +14,8 @@ import {
   X,
   Eye,
   EyeOff,
-  Calendar
+  Calendar,
+  XCircle
 } from 'lucide-react';
 import {
   Select,
@@ -31,12 +32,21 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from '@/lib/utils';
 
 export function ExpectationGrid() {
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
+  const [invalidateDialogOpen, setInvalidateDialogOpen] = useState(false);
   const [selectedExpForMatch, setSelectedExpForMatch] = useState<string | null>(null);
+  const [selectedExpForInvalidate, setSelectedExpForInvalidate] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState('');
+  const [invalidationReason, setInvalidationReason] = useState('');
   const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(null);
   const [showMatched, setShowMatched] = useState(false);
   
@@ -48,6 +58,7 @@ export function ExpectationGrid() {
     getSelectedPayment,
     calculateVariance,
     addPendingMatch,
+    invalidateExpectation,
     tolerance
   } = useReconciliationStore();
   
@@ -98,17 +109,38 @@ export function ExpectationGrid() {
   const unmatchedCount = allExpectations.filter(e => e.status === 'unmatched' && !getPendingMatchForExpectation(e.id)).length;
   const pendingCount = allExpectations.filter(e => getPendingMatchForExpectation(e.id)).length;
   const matchedCount = allExpectations.filter(e => e.status === 'matched').length;
+  const invalidatedCount = allExpectations.filter(e => e.status === 'invalidated').length;
   
-  // Filter out matched items unless showMatched is true
+  // Filter out matched and invalidated items unless showMatched is true
   const filteredExpectations = allExpectations.filter(exp => {
     if (showMatched) return true;
-    return exp.status !== 'matched';
+    return exp.status !== 'matched' && exp.status !== 'invalidated';
   });
   
   // Get selected line item details for sorting (must be before the sort)
   const selectedLineItem = selectedLineItemId && payment
     ? payment.lineItems.find(li => li.id === selectedLineItemId)
     : null;
+    
+  // Get expectation for invalidation dialog
+  const expectationToInvalidate = selectedExpForInvalidate
+    ? allExpectations.find(e => e.id === selectedExpForInvalidate)
+    : null;
+  
+  const handleOpenInvalidateDialog = (expectationId: string) => {
+    setSelectedExpForInvalidate(expectationId);
+    setInvalidationReason('');
+    setInvalidateDialogOpen(true);
+  };
+  
+  const handleConfirmInvalidation = () => {
+    if (selectedExpForInvalidate && invalidationReason.trim()) {
+      invalidateExpectation(selectedExpForInvalidate, invalidationReason.trim());
+      setInvalidateDialogOpen(false);
+      setSelectedExpForInvalidate(null);
+      setInvalidationReason('');
+    }
+  };
   
   // Sort expectations to show suggested matches at the top when a line item is selected
   const expectations = [...filteredExpectations].sort((a, b) => {
@@ -223,6 +255,11 @@ export function ExpectationGrid() {
                 {matchedCount} matched
               </Badge>
             )}
+            {invalidatedCount > 0 && (
+              <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 text-xs h-5">
+                {invalidatedCount} invalid
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {matchedCount > 0 && (
@@ -320,6 +357,7 @@ export function ExpectationGrid() {
             const pendingMatch = getPendingMatchForExpectation(expectation.id);
             const isPending = !!pendingMatch;
             const isMatched = expectation.status === 'matched';
+            const isInvalidated = expectation.status === 'invalidated';
             const isMatchedToThisPayment = payment?.matchedExpectationIds.includes(expectation.id);
             
             const variance = selectedLineItemId 
@@ -327,120 +365,163 @@ export function ExpectationGrid() {
               : null;
             const isWithinTolerance = variance?.isWithinTolerance ?? false;
             
-            const canMatch = selectedLineItemId && !isMatched && !isPending;
+            const canMatch = selectedLineItemId && !isMatched && !isPending && !isInvalidated;
+            const canInvalidate = !isMatched && !isPending && !isInvalidated;
             
             return (
-              <div
-                key={expectation.id}
-                className={cn(
-                  "px-3 py-1.5 flex items-center gap-2 text-sm",
-                  isMatched && isMatchedToThisPayment && "bg-success/5",
-                  isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-50",
-                  isPending && "bg-primary/5",
-                  !isMatched && !isPending && "bg-background"
-                )}
-              >
-                {/* Status Icon */}
-                {isMatched ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                ) : isPending ? (
-                  <Link2 className="h-3.5 w-3.5 text-primary shrink-0" />
-                ) : (
-                  <Target className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                )}
-                
-                {/* Client Name */}
-                <span className="font-medium text-foreground truncate w-28" title={expectation.clientName}>
-                  {expectation.clientName}
-                </span>
-                
-                {/* Policy Reference */}
-                <span className="text-xs text-muted-foreground truncate w-36" title={expectation.planReference}>
-                  {expectation.planReference}
-                </span>
-                
-                {/* Adviser */}
-                <span className="text-xs text-muted-foreground truncate w-16" title={`Adviser: ${expectation.adviserName}`}>
-                  {expectation.adviserName.split(' ')[1] || expectation.adviserName}
-                </span>
-                
-                {/* Superbia Company */}
-                <span className="text-xs text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded truncate shrink-0" title={`Company: ${expectation.superbiaCompany}`}>
-                  {expectation.superbiaCompany === 'Furnley House' ? 'FH' : 
-                   expectation.superbiaCompany === 'Headleys' ? 'HL' : 'AW'}
-                </span>
-                
-                {/* Fee Category */}
-                <Badge variant="outline" className={cn("text-xs h-4 shrink-0", getFeeCategoryColor(expectation.feeCategory))}>
-                  {getFeeCategoryLabel(expectation.feeCategory)}
-                </Badge>
-                
-                {/* Spacer */}
-                <div className="flex-1" />
-                
-                {/* Variance indicator when in line item match mode */}
-                {canMatch && variance && (
-                  <div className={cn(
-                    "text-xs px-1.5 py-0.5 rounded",
-                    isWithinTolerance 
-                      ? "bg-success/10 text-success" 
-                      : "bg-warning/10 text-warning"
-                  )}>
-                    {variance.amount >= 0 ? '+' : ''}{variance.percentage.toFixed(1)}%
-                  </div>
-                )}
-                
-                {/* Pending variance */}
-                {isPending && pendingMatch && (
-                  <div className={cn(
-                    "text-xs px-1.5 py-0.5 rounded",
-                    pendingMatch.isWithinTolerance 
-                      ? "bg-success/10 text-success" 
-                      : "bg-warning/10 text-warning"
-                  )}>
-                    {pendingMatch.variance >= 0 ? '+' : ''}{pendingMatch.variancePercentage.toFixed(1)}%
-                  </div>
-                )}
-                
-                {/* Amount */}
-                <span className="font-semibold tabular-nums text-right w-20 shrink-0">
-                  {formatCurrency(isMatchedToThisPayment ? expectation.allocatedAmount : expectation.expectedAmount)}
-                </span>
-                
-                {/* Match button when in line item match mode */}
-                {canMatch && (
-                  <Button
-                    size="sm"
-                    variant={isWithinTolerance ? "default" : "outline"}
-                    className="h-5 text-xs px-2"
-                    onClick={() => handleMatchClick(expectation.id)}
-                  >
-                    {isWithinTolerance ? (
-                      <>
-                        <Link2 className="h-3 w-3 mr-1" />
-                        Match
-                      </>
-                    ) : (
-                      <>
-                        <AlertTriangle className="h-3 w-3 mr-1" />
-                        Approve
-                      </>
+              <ContextMenu key={expectation.id}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    className={cn(
+                      "px-3 py-1.5 flex items-center gap-2 text-sm cursor-default",
+                      isMatched && isMatchedToThisPayment && "bg-success/5",
+                      isMatched && !isMatchedToThisPayment && "bg-muted/30 opacity-50",
+                      isInvalidated && "bg-destructive/5 opacity-60",
+                      isPending && "bg-primary/5",
+                      !isMatched && !isPending && !isInvalidated && "bg-background"
                     )}
-                  </Button>
-                )}
-                
-                {isPending && (
-                  <Badge variant="outline" className="text-xs h-4 bg-primary/10 text-primary border-primary/30 shrink-0">
-                    Pending
-                  </Badge>
-                )}
-                
-                {isMatchedToThisPayment && (
-                  <Badge variant="outline" className="text-xs h-4 bg-success/10 text-success border-success/30 shrink-0">
-                    Matched
-                  </Badge>
-                )}
-              </div>
+                  >
+                    {/* Status Icon */}
+                    {isInvalidated ? (
+                      <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                    ) : isMatched ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                    ) : isPending ? (
+                      <Link2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                    ) : (
+                      <Target className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                    )}
+                    
+                    {/* Client Name */}
+                    <span className={cn(
+                      "font-medium truncate w-28",
+                      isInvalidated ? "text-muted-foreground line-through" : "text-foreground"
+                    )} title={expectation.clientName}>
+                      {expectation.clientName}
+                    </span>
+                    
+                    {/* Policy Reference */}
+                    <span className={cn(
+                      "text-xs truncate w-36",
+                      isInvalidated ? "text-muted-foreground/60 line-through" : "text-muted-foreground"
+                    )} title={expectation.planReference}>
+                      {expectation.planReference}
+                    </span>
+                    
+                    {/* Adviser */}
+                    <span className="text-xs text-muted-foreground truncate w-16" title={`Adviser: ${expectation.adviserName}`}>
+                      {expectation.adviserName.split(' ')[1] || expectation.adviserName}
+                    </span>
+                    
+                    {/* Superbia Company */}
+                    <span className="text-xs text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded truncate shrink-0" title={`Company: ${expectation.superbiaCompany}`}>
+                      {expectation.superbiaCompany === 'Furnley House' ? 'FH' : 
+                       expectation.superbiaCompany === 'Headleys' ? 'HL' : 'AW'}
+                    </span>
+                    
+                    {/* Fee Category */}
+                    <Badge variant="outline" className={cn("text-xs h-4 shrink-0", getFeeCategoryColor(expectation.feeCategory))}>
+                      {getFeeCategoryLabel(expectation.feeCategory)}
+                    </Badge>
+                    
+                    {/* Spacer */}
+                    <div className="flex-1" />
+                    
+                    {/* Variance indicator when in line item match mode */}
+                    {canMatch && variance && (
+                      <div className={cn(
+                        "text-xs px-1.5 py-0.5 rounded",
+                        isWithinTolerance 
+                          ? "bg-success/10 text-success" 
+                          : "bg-warning/10 text-warning"
+                      )}>
+                        {variance.amount >= 0 ? '+' : ''}{variance.percentage.toFixed(1)}%
+                      </div>
+                    )}
+                    
+                    {/* Pending variance */}
+                    {isPending && pendingMatch && (
+                      <div className={cn(
+                        "text-xs px-1.5 py-0.5 rounded",
+                        pendingMatch.isWithinTolerance 
+                          ? "bg-success/10 text-success" 
+                          : "bg-warning/10 text-warning"
+                      )}>
+                        {pendingMatch.variance >= 0 ? '+' : ''}{pendingMatch.variancePercentage.toFixed(1)}%
+                      </div>
+                    )}
+                    
+                    {/* Amount */}
+                    <span className={cn(
+                      "font-semibold tabular-nums text-right w-20 shrink-0",
+                      isInvalidated && "line-through text-muted-foreground"
+                    )}>
+                      {formatCurrency(isMatchedToThisPayment ? expectation.allocatedAmount : expectation.expectedAmount)}
+                    </span>
+                    
+                    {/* Match button when in line item match mode */}
+                    {canMatch && (
+                      <Button
+                        size="sm"
+                        variant={isWithinTolerance ? "default" : "outline"}
+                        className="h-5 text-xs px-2"
+                        onClick={() => handleMatchClick(expectation.id)}
+                      >
+                        {isWithinTolerance ? (
+                          <>
+                            <Link2 className="h-3 w-3 mr-1" />
+                            Match
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            Approve
+                          </>
+                        )}
+                      </Button>
+                    )}
+                    
+                    {isPending && (
+                      <Badge variant="outline" className="text-xs h-4 bg-primary/10 text-primary border-primary/30 shrink-0">
+                        Pending
+                      </Badge>
+                    )}
+                    
+                    {isMatchedToThisPayment && (
+                      <Badge variant="outline" className="text-xs h-4 bg-success/10 text-success border-success/30 shrink-0">
+                        Matched
+                      </Badge>
+                    )}
+                    
+                    {isInvalidated && (
+                      <Badge variant="outline" className="text-xs h-4 bg-destructive/10 text-destructive border-destructive/30 shrink-0">
+                        Invalid
+                      </Badge>
+                    )}
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  {canInvalidate && (
+                    <ContextMenuItem 
+                      onClick={() => handleOpenInvalidateDialog(expectation.id)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Mark as Invalid
+                    </ContextMenuItem>
+                  )}
+                  {isInvalidated && (
+                    <ContextMenuItem disabled className="text-xs text-muted-foreground">
+                      Invalidated: {expectation.invalidationReason}
+                    </ContextMenuItem>
+                  )}
+                  {(isMatched || isPending) && (
+                    <ContextMenuItem disabled className="text-xs text-muted-foreground">
+                      {isMatched ? 'Already matched' : 'Pending match'}
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuContent>
+              </ContextMenu>
             );
           })}
           
@@ -530,6 +611,63 @@ export function ExpectationGrid() {
             >
               <CheckCircle2 className="h-4 w-4" />
               Approve Match
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Invalidate Expectation Dialog */}
+      <Dialog open={invalidateDialogOpen} onOpenChange={setInvalidateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-destructive" />
+              Mark Expectation as Invalid
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently remove this expectation from the reconciliation. This action is recorded for audit purposes.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Expectation Details */}
+            {expectationToInvalidate && (
+              <div className="bg-muted/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Expectation to Invalidate</p>
+                <p className="font-medium text-sm">{expectationToInvalidate.clientName}</p>
+                <p className="text-xs text-muted-foreground">{expectationToInvalidate.planReference}</p>
+                <p className="text-lg font-bold tabular-nums mt-1">{formatCurrency(expectationToInvalidate.expectedAmount)}</p>
+              </div>
+            )}
+            
+            {/* Invalidation Reason */}
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Reason for Invalidation (required)</p>
+              <Textarea
+                placeholder="e.g., Plan was not marked as out of force in the system..."
+                value={invalidationReason}
+                onChange={(e) => setInvalidationReason(e.target.value)}
+                className={cn("resize-none", !invalidationReason.trim() && "border-destructive")}
+                rows={3}
+              />
+              {!invalidationReason.trim() && (
+                <p className="text-xs text-destructive mt-1">A reason is required for audit purposes</p>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setInvalidateDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleConfirmInvalidation}
+              disabled={!invalidationReason.trim()}
+              className="gap-2"
+            >
+              <XCircle className="h-4 w-4" />
+              Mark as Invalid
             </Button>
           </DialogFooter>
         </DialogContent>

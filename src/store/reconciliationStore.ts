@@ -32,6 +32,7 @@ interface ReconciliationStore {
   autoMatchCurrentPayment: () => void;
   markLineItemApprovedUnmatched: (lineItemId: string, notes: string) => void;
   markPaymentFullyReconciled: (notes: string) => void;
+  invalidateExpectation: (expectationId: string, reason: string) => void;
   setTolerance: (tolerance: number) => void;
   setPaymentFilters: (filters: Partial<PaymentFilters>) => void;
   setExpectationFilters: (filters: Partial<ExpectationFilters>) => void;
@@ -401,6 +402,28 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       payments: updatedPayments,
       pendingMatches: [],
       statistics: calculateStatistics(updatedPayments, expectations, matches)
+    });
+  },
+  
+  invalidateExpectation: (expectationId: string, reason: string) => {
+    const { expectations, payments, matches } = get();
+    
+    const updatedExpectations = expectations.map(e => {
+      if (e.id === expectationId) {
+        return {
+          ...e,
+          status: 'invalidated' as const,
+          invalidatedAt: new Date().toISOString(),
+          invalidatedBy: 'Current User',
+          invalidationReason: reason
+        };
+      }
+      return e;
+    });
+    
+    set({
+      expectations: updatedExpectations,
+      statistics: calculateStatistics(payments, updatedExpectations, matches)
     });
   },
   

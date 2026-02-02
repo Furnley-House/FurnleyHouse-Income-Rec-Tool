@@ -60,7 +60,7 @@ export interface Expectation {
   providerName: string;
   adviserName: string;
   superbiaCompany: string;
-  status: 'unmatched' | 'partial' | 'matched';
+  status: 'unmatched' | 'partial' | 'matched' | 'invalidated';
   allocatedAmount: number;
   remainingAmount: number;
   matchedToPayments: Array<{
@@ -68,6 +68,10 @@ export interface Expectation {
     amount: number;
     matchId: string;
   }>;
+  // Invalidation fields
+  invalidatedAt?: string;
+  invalidatedBy?: string;
+  invalidationReason?: string;
 }
 
 export interface Match {
