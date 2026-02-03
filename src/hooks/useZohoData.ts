@@ -190,6 +190,7 @@ export function useZohoData(): UseZohoDataReturn {
         
         const lineItems: PaymentLineItem[] = paymentLineItems.map(li => ({
           id: li.id,
+          zohoId: li.id, // Store Zoho ID for sync operations
           clientName: li.Client_Name || 'Unknown Client',
           planReference: li.Plan_Reference || '',
           agencyCode: undefined, // Not in Zoho yet
@@ -210,6 +211,7 @@ export function useZohoData(): UseZohoDataReturn {
 
         return {
           id: zp.id,
+          zohoId: zp.id, // Store Zoho ID for sync operations
           providerName,
           paymentReference: zp.Payment_Reference || 'Unknown Payment',
           amount: totalAmount,
@@ -241,6 +243,7 @@ export function useZohoData(): UseZohoDataReturn {
 
         return {
           id: ze.id,
+          zohoId: ze.id, // Store Zoho ID for sync operations
           clientName: ze.Client_1?.name || 'Unknown Client',
           planReference: ze.Plan_Policy_Reference || '',
           expectedAmount,

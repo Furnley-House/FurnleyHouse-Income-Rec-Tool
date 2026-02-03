@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { useZohoSync } from '@/hooks/useZohoSync';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +10,8 @@ import {
   AlertTriangle,
   TrendingUp,
   TrendingDown,
-  Equal
+  Equal,
+  Loader2
 } from 'lucide-react';
 import {
   Dialog,
@@ -23,6 +25,7 @@ import { cn } from '@/lib/utils';
 
 export function MatchConfirmation() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [notes, setNotes] = useState('');
   
   const { 
@@ -32,8 +35,11 @@ export function MatchConfirmation() {
     getSelectedPayment,
     clearPendingMatches,
     confirmPendingMatches,
-    tolerance
+    tolerance,
+    dataSource
   } = useReconciliationStore();
+  
+  const { syncMatches, syncPaymentStatus } = useZohoSync();
   
   const payment = getSelectedPayment();
   const summary = getPendingMatchSummary();
@@ -91,8 +97,69 @@ export function MatchConfirmation() {
     }
   };
   
-  const handleConfirm = () => {
-    confirmPendingMatches(notes);
+  const handleConfirm = async () => {
+    if (!payment) return;
+    
+    setIsSyncing(true);
+    
+    try {
+      // First, confirm matches locally
+      confirmPendingMatches(notes);
+      
+      // If using Zoho, sync to CRM
+      if (dataSource === 'zoho') {
+        // Build sync data for each pending match
+        const matchSyncData = pendingMatches.map(pm => {
+          const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
+          const expectation = expectations.find(e => e.id === pm.expectationId);
+          
+          // Determine match quality based on variance
+          let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+          const absVariance = Math.abs(pm.variancePercentage);
+          if (absVariance < 0.1) matchQuality = 'perfect';
+          else if (absVariance <= 2) matchQuality = 'good';
+          else if (absVariance <= tolerance) matchQuality = 'acceptable';
+          
+          return {
+            paymentId: payment.id,
+            paymentZohoId: payment.zohoId || payment.id,
+            lineItemId: pm.lineItemId,
+            lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
+            expectationId: pm.expectationId,
+            expectationZohoId: expectation?.zohoId || pm.expectationId,
+            matchedAmount: pm.lineItemAmount,
+            variance: pm.variance,
+            variancePercentage: pm.variancePercentage,
+            matchType: 'full' as const,
+            matchMethod: 'manual' as const,
+            matchQuality,
+            notes: notes,
+          };
+        });
+        
+        // Sync matches to Zoho
+        await syncMatches(matchSyncData);
+        
+        // Update payment status in Zoho
+        const newReconciledAmount = payment.reconciledAmount + summary.totalLineItemAmount;
+        const newRemainingAmount = payment.amount - newReconciledAmount;
+        const allMatched = payment.lineItems.every(li => 
+          li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
+        );
+        const newStatus = allMatched ? 'reconciled' : 'in_progress';
+        
+        await syncPaymentStatus(
+          payment.zohoId || payment.id,
+          newStatus,
+          newReconciledAmount,
+          newRemainingAmount,
+          notes
+        );
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+    
     setNotes('');
     setIsDialogOpen(false);
   };
@@ -290,16 +357,25 @@ export function MatchConfirmation() {
           </div>
           
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isSyncing}>
               Cancel
             </Button>
             <Button 
               onClick={handleConfirm} 
               className="gap-2"
-              disabled={hasOutOfTolerance && !notes.trim()}
+              disabled={(hasOutOfTolerance && !notes.trim()) || isSyncing}
             >
-              <CheckCircle2 className="h-4 w-4" />
-              {allWithinTolerance ? 'Confirm Matches' : 'Approve & Confirm'}
+              {isSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Syncing to Zoho...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  {allWithinTolerance ? 'Confirm Matches' : 'Approve & Confirm'}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { useZohoSync } from '@/hooks/useZohoSync';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -14,7 +15,8 @@ import {
   TrendingDown,
   Settings2,
   Play,
-  SkipForward
+  SkipForward,
+  Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PendingMatch } from '@/types/reconciliation';
@@ -33,8 +35,12 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     addPendingMatch,
     confirmPendingMatches,
     tolerance,
-    setTolerance
+    setTolerance,
+    dataSource,
+    expectations: allExpectationsFromStore
   } = useReconciliationStore();
+  
+  const { syncMatches, syncPaymentStatus } = useZohoSync();
   
   const payment = getSelectedPayment();
   const expectations = getRelevantExpectations();
@@ -42,6 +48,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   const [currentToleranceStep, setCurrentToleranceStep] = useState(0);
   const [passResults, setPassResults] = useState<TolerancePassResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const toleranceSteps = [0, 0.5, 1, 2, 5];
   
@@ -255,10 +262,71 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     setIsRunning(false);
   };
   
-  const handleConfirmAndContinue = () => {
-    if (pendingMatches.length > 0) {
-      confirmPendingMatches(`Prescreening batch - matched at tolerance levels: ${passResults.map(p => `${p.tolerance}%`).join(', ')}`);
+  const handleConfirmAndContinue = async () => {
+    if (pendingMatches.length === 0) return;
+    
+    setIsSyncing(true);
+    
+    try {
+      // First, confirm matches locally
+      const notes = `Prescreening batch - matched at tolerance levels: ${passResults.map(p => `${p.tolerance}%`).join(', ')}`;
+      confirmPendingMatches(notes);
+      
+      // If using Zoho, sync to CRM
+      if (dataSource === 'zoho') {
+        // Build sync data for each pending match
+        const matchSyncData = pendingMatches.map(pm => {
+          const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
+          const expectation = allExpectationsFromStore.find(e => e.id === pm.expectationId);
+          
+          // Determine match quality based on variance
+          let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+          const absVariance = Math.abs(pm.variancePercentage);
+          if (absVariance < 0.1) matchQuality = 'perfect';
+          else if (absVariance <= 2) matchQuality = 'good';
+          else if (absVariance <= tolerance) matchQuality = 'acceptable';
+          
+          return {
+            paymentId: payment.id,
+            paymentZohoId: payment.zohoId || payment.id,
+            lineItemId: pm.lineItemId,
+            lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
+            expectationId: pm.expectationId,
+            expectationZohoId: expectation?.zohoId || pm.expectationId,
+            matchedAmount: pm.lineItemAmount,
+            variance: pm.variance,
+            variancePercentage: pm.variancePercentage,
+            matchType: 'full' as const,
+            matchMethod: 'auto' as const, // Prescreening is auto-matching
+            matchQuality,
+            notes,
+          };
+        });
+        
+        // Sync matches to Zoho
+        await syncMatches(matchSyncData);
+        
+        // Calculate new payment status
+        const totalMatchedAmount = pendingMatches.reduce((sum, pm) => sum + pm.lineItemAmount, 0);
+        const newReconciledAmount = payment.reconciledAmount + totalMatchedAmount;
+        const newRemainingAmount = payment.amount - newReconciledAmount;
+        const allMatched = payment.lineItems.every(li => 
+          li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
+        );
+        const newStatus = allMatched ? 'reconciled' : 'in_progress';
+        
+        await syncPaymentStatus(
+          payment.zohoId || payment.id,
+          newStatus,
+          newReconciledAmount,
+          newRemainingAmount,
+          notes
+        );
+      }
+      
       setPassResults([]);
+    } finally {
+      setIsSyncing(false);
     }
   };
   
@@ -391,10 +459,20 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
               <Button
                 variant="secondary"
                 onClick={handleConfirmAndContinue}
+                disabled={isSyncing}
                 className="w-full gap-2"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                Confirm {pendingMatches.length} Matches
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Syncing to Zoho...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Confirm {pendingMatches.length} Matches
+                  </>
+                )}
               </Button>
             )}
             
