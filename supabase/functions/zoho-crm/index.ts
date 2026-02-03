@@ -362,8 +362,8 @@ serve(async (req) => {
 
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
-        // Provider_ID is a picklist (not a lookup), so it returns a string value directly
-        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider_ID,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
+        // Provider is the lookup field to Providers module (returns {name, id})
+        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
         
         const conditions: string[] = [];
         
