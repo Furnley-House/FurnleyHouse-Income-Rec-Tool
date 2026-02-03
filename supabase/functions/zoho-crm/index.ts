@@ -29,6 +29,8 @@ interface ZohoListResponse {
     count: number;
     page: number;
     more_records: boolean;
+    page_token?: string;  // Required for pagination beyond 2000 records in API v6
+    next_page_token?: string;  // Alternative field name
   };
   status?: string;
   code?: string;
@@ -110,23 +112,32 @@ async function fetchModule(
   return data.data || [];
 }
 
-// Fetch records with pagination
+// Fetch records with pagination using page_token (required for >2000 records in API v6)
 async function fetchAllRecords(
   accessToken: string,
   module: string,
   params: Record<string, string> = {},
-  maxPages: number = 50  // Increased from 10 to support larger datasets (50 * 200 = 10,000 max)
+  maxIterations: number = 100  // Safety limit to prevent infinite loops
 ): Promise<ZohoRecord[]> {
   const allRecords: ZohoRecord[] = [];
-  let page = 1;
-  let hasMore = true;
+  let pageToken: string | null = null;
+  let iteration = 0;
 
-  while (hasMore && page <= maxPages) {
+  while (iteration < maxIterations) {
     const apiDomain = "https://www.zohoapis.eu";
-    const queryParams = new URLSearchParams({ ...params, page: page.toString(), per_page: "200" });
+    const queryParams = new URLSearchParams({ ...params, per_page: "200" });
+    
+    // Use page_token for subsequent requests (required for >2000 records)
+    if (pageToken) {
+      queryParams.set("page_token", pageToken);
+    } else if (iteration > 0) {
+      // If we don't have a page_token but this isn't the first request, we're done
+      break;
+    }
+    
     const url = `${apiDomain}/crm/v6/${module}?${queryParams}`;
     
-    console.log(`Fetching ${module} page ${page}:`, url);
+    console.log(`Fetching ${module} iteration ${iteration + 1}:`, url);
 
     const response = await fetch(url, {
       headers: {
@@ -148,10 +159,19 @@ async function fetchAllRecords(
 
     if (data.data) {
       allRecords.push(...data.data);
+      console.log(`Fetched ${data.data.length} records, total so far: ${allRecords.length}`);
     }
 
-    hasMore = data.info?.more_records || false;
-    page++;
+    // Get next page token - check both possible field names
+    pageToken = data.info?.next_page_token || data.info?.page_token || null;
+    
+    // Check if there are more records
+    if (!data.info?.more_records || !pageToken) {
+      console.log(`No more records for ${module}`);
+      break;
+    }
+    
+    iteration++;
   }
 
   console.log(`Fetched ${allRecords.length} total records from ${module}`);
