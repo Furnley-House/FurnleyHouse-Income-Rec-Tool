@@ -68,13 +68,31 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       e.status === 'unmatched' && !pendingExpectationIds.includes(e.id)
     );
     
+    console.log(`[Prescreening] Starting match calculation:`);
+    console.log(`  - ${unmatchedLineItems.length} unmatched line items`);
+    console.log(`  - ${unmatchedExpectations.length} unmatched expectations`);
+    
+    // Log sample of line item amounts
+    console.log(`[Prescreening] Sample line items (first 5):`);
+    unmatchedLineItems.slice(0, 5).forEach(li => {
+      console.log(`  - ${li.planReference}: £${li.amount}`);
+    });
+    
+    // Log sample of expectation amounts
+    console.log(`[Prescreening] Sample expectations (first 5):`);
+    unmatchedExpectations.slice(0, 5).forEach(e => {
+      console.log(`  - ${e.planReference}: £${e.expectedAmount}`);
+    });
+    
     const matches: PendingMatch[] = [];
     const usedExpectationIds = new Set<string>();
     let skippedZeroOrInvalidExpectedAmount = 0;
+    let matchLogCount = 0;
     
     for (const lineItem of unmatchedLineItems) {
       if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
       
+      // STEP 1: Find expectation with matching plan reference
       const matchingExpectation = unmatchedExpectations.find(e =>
         e.planReference && 
         e.planReference.trim() !== '' &&
@@ -83,17 +101,25 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       );
       
       if (matchingExpectation) {
-        // Defensive: expectations with 0/invalid expected amount should never be treated as exact matches.
-        // If these exist in the dataset, % variance is undefined and would incorrectly look like 0.
+        // STEP 2: Validate expectation has valid amount
         if (!(matchingExpectation.expectedAmount > 0)) {
           skippedZeroOrInvalidExpectedAmount += 1;
           continue;
         }
 
+        // STEP 3: Calculate variance AFTER confirming plan reference match
         const variance = lineItem.amount - matchingExpectation.expectedAmount;
-        const variancePercentage = matchingExpectation.expectedAmount > 0
-          ? (variance / matchingExpectation.expectedAmount) * 100
-          : 0;
+        const variancePercentage = (variance / matchingExpectation.expectedAmount) * 100;
+        
+        // Log first 10 matches to verify calculation
+        if (matchLogCount < 10) {
+          console.log(`[Prescreening] MATCH #${matchLogCount + 1}:`);
+          console.log(`  Plan Ref: ${lineItem.planReference}`);
+          console.log(`  Line Item Amount: £${lineItem.amount.toFixed(2)}`);
+          console.log(`  Expected Amount:  £${matchingExpectation.expectedAmount.toFixed(2)}`);
+          console.log(`  Variance: £${variance.toFixed(2)} (${variancePercentage.toFixed(4)}%)`);
+          matchLogCount++;
+        }
         
         usedExpectationIds.add(matchingExpectation.id);
         matches.push({
@@ -113,6 +139,8 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
         `[Prescreening] Skipped ${skippedZeroOrInvalidExpectedAmount} plan-reference matches because the expectation had expectedAmount <= 0 (data issue).`
       );
     }
+    
+    console.log(`[Prescreening] Total plan reference matches found: ${matches.length}`);
     
     return matches;
   };
