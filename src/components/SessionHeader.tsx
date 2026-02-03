@@ -1,7 +1,10 @@
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { useZohoData } from '@/hooks/useZohoData';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -9,7 +12,10 @@ import {
   TrendingUp,
   Wallet,
   FileCheck,
-  Settings
+  Settings,
+  Database,
+  Cloud,
+  Loader2
 } from 'lucide-react';
 import {
   Popover,
@@ -17,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { DataImport } from './DataImport';
+import { toast } from 'sonner';
 
 export function SessionHeader() {
   const { 
@@ -24,8 +31,14 @@ export function SessionHeader() {
     tolerance, 
     setTolerance,
     selectedPaymentId,
-    autoMatchCurrentPayment 
+    autoMatchCurrentPayment,
+    dataSource,
+    isLoadingData,
+    setDataSource,
+    setLoadingState
   } = useReconciliationStore();
+  
+  const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -39,6 +52,26 @@ export function SessionHeader() {
   const progressPercentage = statistics.totalPayments > 0 
     ? (statistics.reconciledPayments / statistics.totalPayments) * 100 
     : 0;
+  
+  const handleDataSourceToggle = async (useZoho: boolean) => {
+    if (useZoho) {
+      setLoadingState(true);
+      toast.info('Loading data from Zoho CRM...');
+      const data = await loadZohoData();
+      if (data) {
+        setDataSource('zoho', data.payments, data.expectations);
+        toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
+      } else {
+        setLoadingState(false, 'Failed to load Zoho data');
+        toast.error('Failed to load data from Zoho CRM');
+      }
+    } else {
+      setDataSource('mock');
+      toast.info('Switched to mock data');
+    }
+  };
+  
+  const isLoading = isLoadingData || isZohoLoading;
   
   return (
     <header className="h-auto min-h-[100px] bg-card border-b border-border px-6 py-4">
@@ -85,6 +118,27 @@ export function SessionHeader() {
         
         {/* Right: Progress and Actions */}
         <div className="flex items-center gap-4">
+          {/* Data Source Toggle */}
+          <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-muted/30">
+            <div className="flex items-center gap-1.5">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Mock</span>
+            </div>
+            <Switch
+              checked={dataSource === 'zoho'}
+              onCheckedChange={handleDataSourceToggle}
+              disabled={isLoading}
+            />
+            <div className="flex items-center gap-1.5">
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 text-primary animate-spin" />
+              ) : (
+                <Cloud className="h-4 w-4 text-primary" />
+              )}
+              <span className="text-xs font-medium text-primary">Zoho</span>
+            </div>
+          </div>
+          
           {/* Overall Progress */}
           <div className="w-48">
             <div className="flex items-center justify-between mb-1">
