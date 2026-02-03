@@ -2,12 +2,14 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 // Cache for access token (in-memory, resets on cold start)
 let cachedAccessToken: string | null = null;
 let tokenExpiresAt: number = 0;
+let refreshInFlight: Promise<string> | null = null;
 
 interface ZohoTokenResponse {
   access_token: string;
@@ -15,6 +17,47 @@ interface ZohoTokenResponse {
   api_domain: string;
   token_type: string;
   error?: string;
+  error_description?: string;
+  status?: string;
+}
+
+class ZohoRateLimitError extends Error {
+  retryAfterSeconds: number;
+  constructor(message: string, retryAfterSeconds = 60) {
+    super(message);
+    this.name = "ZohoRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatZohoDateTime(date: Date = new Date()): string {
+  // Zoho datetime commonly expects timezone offset format (no milliseconds)
+  // e.g. 2026-02-03T12:34:56+00:00
+  return date.toISOString().replace(/\.\d{3}Z$/, "+00:00");
+}
+
+function redactTokenLog(tokenData: ZohoTokenResponse) {
+  const { access_token: _accessToken, ...rest } = tokenData;
+  return rest;
+}
+
+function extractZohoApiError(payload: unknown): string | null {
+  try {
+    const p: any = payload;
+    const first = p?.data?.[0];
+    if (!first) return null;
+    if (first.status === "error") {
+      const apiName = first?.details?.api_name ? ` (${first.details.api_name})` : "";
+      return `${first.message || "Zoho returned an error"}${apiName}`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 interface ZohoRecord {
@@ -47,7 +90,14 @@ async function getAccessToken(): Promise<string> {
     return cachedAccessToken;
   }
 
-  console.log("Refreshing access token...");
+  // If another request is already refreshing, await it (prevents stampede)
+  if (refreshInFlight) {
+    console.log("Awaiting in-flight token refresh");
+    return await refreshInFlight;
+  }
+
+  refreshInFlight = (async () => {
+    console.log("Refreshing access token...");
   
   const clientId = Deno.env.get("ZOHO_CLIENT_ID");
   const clientSecret = Deno.env.get("ZOHO_CLIENT_SECRET");
@@ -57,31 +107,68 @@ async function getAccessToken(): Promise<string> {
     throw new Error("Missing Zoho credentials. Please configure ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REFRESH_TOKEN.");
   }
 
-  // Use EU accounts endpoint
-  const tokenResponse = await fetch("https://accounts.zoho.eu/oauth/v2/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-    }),
-  });
+    // Use EU accounts endpoint
+    const tokenUrl = "https://accounts.zoho.eu/oauth/v2/token";
 
-  const tokenData: ZohoTokenResponse = await tokenResponse.json();
-  console.log("Token refresh response:", JSON.stringify(tokenData, null, 2));
+    // Retry a few times on Zoho throttling
+    const backoffMs = [500, 1500, 3000];
+    let lastError: string | null = null;
 
-  if (tokenData.error) {
-    throw new Error(`Token refresh failed: ${tokenData.error}`);
+    for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+      const tokenResponse = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+        }),
+      });
+
+      const tokenData: ZohoTokenResponse = await tokenResponse.json();
+      console.log("Token refresh response:", JSON.stringify(redactTokenLog(tokenData), null, 2));
+
+      if (tokenData.error) {
+        lastError = tokenData.error_description || tokenData.error;
+
+        // Zoho sometimes returns Access Denied when rate-limited
+        const isRateLimited =
+          tokenData.error === "Access Denied" &&
+          (tokenData.error_description || "").toLowerCase().includes("too many requests");
+
+        if (isRateLimited && attempt < backoffMs.length - 1) {
+          console.warn(`Zoho token refresh rate-limited. Backing off ${backoffMs[attempt]}ms...`);
+          await sleep(backoffMs[attempt]);
+          continue;
+        }
+
+        if (isRateLimited) {
+          throw new ZohoRateLimitError(
+            `Token refresh rate-limited: ${tokenData.error_description || tokenData.error}`,
+            60
+          );
+        }
+
+        throw new Error(`Token refresh failed: ${tokenData.error}${tokenData.error_description ? ` (${tokenData.error_description})` : ""}`);
+      }
+
+      cachedAccessToken = tokenData.access_token;
+      tokenExpiresAt = now + tokenData.expires_in * 1000;
+      return cachedAccessToken;
+    }
+
+    // Shouldn't reach here, but just in case
+    throw new Error(`Token refresh failed: ${lastError || "Unknown error"}`);
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
   }
-
-  cachedAccessToken = tokenData.access_token;
-  tokenExpiresAt = now + (tokenData.expires_in * 1000);
-  
-  return cachedAccessToken;
 }
 
 // Fetch records from a Zoho CRM module
@@ -349,7 +436,7 @@ serve(async (req) => {
             Match_Quality: params.matchQuality || "good",
             Notes: params.notes || "",
             Matched_By: "Reconciliation Tool",
-            Matched_At: new Date().toISOString(),
+            Matched_At: formatZohoDateTime(new Date()),
             Confirmed: true,
           }]
         };
@@ -363,7 +450,13 @@ serve(async (req) => {
           body: JSON.stringify(matchData),
         });
 
-        result = await createResponse.json();
+        const payload = await createResponse.json();
+        const apiErr = extractZohoApiError(payload);
+        if (apiErr) {
+          result = { success: false, error: apiErr, data: payload };
+        } else {
+          result = payload;
+        }
         break;
       }
 
@@ -384,7 +477,13 @@ serve(async (req) => {
           body: JSON.stringify({ data: [data] }),
         });
 
-        result = await updateResponse.json();
+        const payload = await updateResponse.json();
+        const apiErr = extractZohoApiError(payload);
+        if (apiErr) {
+          result = { success: false, error: apiErr, data: payload };
+        } else {
+          result = payload;
+        }
         break;
       }
 
@@ -404,6 +503,15 @@ serve(async (req) => {
         );
     }
 
+    // If an action returned an embedded error result, pass it through as {success:false}
+    const maybeErr = (result as any)?.success === false;
+    if (maybeErr) {
+      return new Response(
+        JSON.stringify({ success: false, error: (result as any).error, data: (result as any).data }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ success: true, data: result }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -412,9 +520,23 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error("Error in zoho-crm function:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // Return 200 so the client can read the body (supabase-js throws on non-2xx)
+    if (error instanceof ZohoRateLimitError) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error.message,
+          code: "ZOHO_RATE_LIMIT",
+          retryAfterSeconds: error.retryAfterSeconds,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
