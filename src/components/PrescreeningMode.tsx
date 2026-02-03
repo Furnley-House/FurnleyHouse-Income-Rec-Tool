@@ -72,7 +72,12 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     const usedExpectationIds = new Set<string>();
     
     for (const lineItem of unmatchedLineItems) {
+      // Skip if line item has no plan reference - can't auto-match without it
+      if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
+      
       const matchingExpectation = unmatchedExpectations.find(e =>
+        e.planReference && 
+        e.planReference.trim() !== '' &&
         e.planReference === lineItem.planReference &&
         !usedExpectationIds.has(e.id)
       );

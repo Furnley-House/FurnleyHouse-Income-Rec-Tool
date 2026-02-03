@@ -319,7 +319,12 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       // Skip if already added in this loop
       if (newPendingMatches.some(pm => pm.lineItemId === lineItem.id)) continue;
       
+      // Skip if line item has no plan reference - can't auto-match without it
+      if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
+      
       const matchingExpectation = relevantExpectations.find(e => 
+        e.planReference && 
+        e.planReference.trim() !== '' &&
         e.planReference === lineItem.planReference &&
         !newPendingMatches.some(pm => pm.expectationId === e.id)
       );
