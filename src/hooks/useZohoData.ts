@@ -213,7 +213,8 @@ export function useZohoData(): UseZohoDataReturn {
           id: zp.id,
           zohoId: zp.id, // Store Zoho ID for sync operations
           providerName,
-          paymentReference: zp.Payment_Reference || 'Unknown Payment',
+          // Use Payment_Reference if present, otherwise fall back to Bank_Reference
+          paymentReference: zp.Payment_Reference || zp.Bank_Reference || 'Unknown Payment',
           amount: totalAmount,
           paymentDate: zp.Payment_Date || new Date().toISOString().split('T')[0],
           bankReference: zp.Bank_Reference || '',
