@@ -40,7 +40,8 @@ interface ZohoExpectation {
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
-  Provider_Name?: { name: string; id: string };
+  // Provider_ID is a picklist field - returns the provider name directly as a string
+  Provider_ID?: string;
   Adviser_Name?: string;
   Superbia_Company?: string;
   Status?: string;
@@ -182,9 +183,9 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform payments
       const payments: Payment[] = zohoPayments.map(zp => {
-        const providerName = zp.Payment_Provider?.id 
-          ? providerMap.get(zp.Payment_Provider.id) || zp.Payment_Provider.name 
-          : 'Unknown Provider';
+        // Payment_Provider is a lookup - use the name directly for matching with expectations
+        // Expectations use Provider_ID (picklist) which returns the provider name directly
+        const providerName = zp.Payment_Provider?.name || 'Unknown Provider';
         
         const paymentLineItems = lineItemsByPayment.get(zp.id) || [];
         
@@ -234,9 +235,8 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform expectations
       const expectations: Expectation[] = zohoExpectations.map(ze => {
-        const providerName = ze.Provider_Name?.id 
-          ? providerMap.get(ze.Provider_Name.id) || ze.Provider_Name.name 
-          : 'Unknown Provider';
+        // Provider_ID is a picklist field - it returns the provider name directly as a string
+        const providerName = ze.Provider_ID || 'Unknown Provider';
 
         const expectedAmount = coerceCurrency(ze.Expected_Fee_Amount);
         const allocatedAmount = coerceCurrency(ze.Allocated_Amount);
