@@ -57,6 +57,8 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   // Calculate potential matches at each tolerance level
   const calculateMatchesAtTolerance = (tolerancePercent: number): PendingMatch[] => {
+    console.log(`[Prescreening] Calculating matches at ${tolerancePercent}% tolerance`);
+    
     const pendingLineItemIds = pendingMatches.map(pm => pm.lineItemId);
     const pendingExpectationIds = pendingMatches.map(pm => pm.expectationId);
     
@@ -68,19 +70,30 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       e.status === 'unmatched' && !pendingExpectationIds.includes(e.id)
     );
     
+    console.log(`[Prescreening] ${unmatchedLineItems.length} unmatched line items, ${unmatchedExpectations.length} unmatched expectations`);
+    
     const matches: PendingMatch[] = [];
     const usedExpectationIds = new Set<string>();
     
     for (const lineItem of unmatchedLineItems) {
       // Skip if line item has no plan reference - can't auto-match without it
-      if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
+      if (!lineItem.planReference || lineItem.planReference.trim() === '') {
+        console.log(`[Prescreening] Skipping line item "${lineItem.clientName}" - no plan reference`);
+        continue;
+      }
       
-      const matchingExpectation = unmatchedExpectations.find(e =>
-        e.planReference && 
-        e.planReference.trim() !== '' &&
-        e.planReference === lineItem.planReference &&
-        !usedExpectationIds.has(e.id)
-      );
+      // Find expectation with EXACT plan reference match
+      const matchingExpectation = unmatchedExpectations.find(e => {
+        const refMatch = e.planReference && 
+          e.planReference.trim() !== '' &&
+          e.planReference === lineItem.planReference &&
+          !usedExpectationIds.has(e.id);
+        
+        if (refMatch) {
+          console.log(`[Prescreening] Plan reference match: "${lineItem.planReference}" === "${e.planReference}"`);
+        }
+        return refMatch;
+      });
       
       if (matchingExpectation) {
         const variance = lineItem.amount - matchingExpectation.expectedAmount;
@@ -88,7 +101,10 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
           ? (variance / matchingExpectation.expectedAmount) * 100
           : 0;
         
+        console.log(`[Prescreening] Checking tolerance: ${Math.abs(variancePercentage).toFixed(2)}% vs allowed ${tolerancePercent}%`);
+        
         if (Math.abs(variancePercentage) <= tolerancePercent) {
+          console.log(`[Prescreening] ✓ MATCH: ${lineItem.clientName} (${lineItem.planReference}) - variance ${variancePercentage.toFixed(2)}% within ${tolerancePercent}%`);
           usedExpectationIds.add(matchingExpectation.id);
           matches.push({
             lineItemId: lineItem.id,
@@ -99,10 +115,13 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
             variancePercentage,
             isWithinTolerance: true
           });
+        } else {
+          console.log(`[Prescreening] ✗ REJECTED: ${lineItem.clientName} - variance ${variancePercentage.toFixed(2)}% exceeds ${tolerancePercent}%`);
         }
       }
     }
     
+    console.log(`[Prescreening] Found ${matches.length} matches at ${tolerancePercent}% tolerance`);
     return matches;
   };
   
