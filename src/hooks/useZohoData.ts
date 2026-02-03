@@ -36,7 +36,7 @@ interface ZohoExpectation {
   id: string;
   Plan_Policy_Reference?: string;
   Client_1?: { name: string; id: string };
-  Expected_Amount?: unknown;
+  Expected_Fee_Amount?: unknown;
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
@@ -144,9 +144,9 @@ export function useZohoData(): UseZohoDataReturn {
 
       const rawExpectedAmounts = zohoExpectations
         .slice(0, 50)
-        .map(e => coerceCurrency((e as any).Expected_Amount))
+        .map(e => coerceCurrency(e.Expected_Fee_Amount))
         .filter(n => n > 0);
-      console.log(`[Zoho] DEBUG - Non-zero Expected_Amount count in first 50 expectations: ${rawExpectedAmounts.length}`);
+      console.log(`[Zoho] DEBUG - Non-zero Expected_Fee_Amount count in first 50 expectations: ${rawExpectedAmounts.length}`);
 
       // Find a matching plan reference and compare amounts
       const sampleLineItem = zohoLineItems.find(li => li.Plan_Reference && li.Plan_Reference.trim() !== '');
@@ -154,11 +154,11 @@ export function useZohoData(): UseZohoDataReturn {
         const matchingExp = zohoExpectations.find(e => e.Plan_Policy_Reference === sampleLineItem.Plan_Reference);
         if (matchingExp) {
           const liAmount = coerceCurrency(sampleLineItem.Amount);
-          const expAmount = coerceCurrency((matchingExp as any).Expected_Amount);
+          const expAmount = coerceCurrency(matchingExp.Expected_Fee_Amount);
           console.log('[Zoho] DEBUG - SAMPLE MATCH COMPARISON:');
           console.log(`  Plan Reference: ${sampleLineItem.Plan_Reference}`);
           console.log(`  Line Item Amount: £${liAmount.toFixed(2)}`);
-          console.log(`  Expected Amount: £${expAmount.toFixed(2)}`);
+          console.log(`  Expected Fee Amount: £${expAmount.toFixed(2)}`);
           console.log(`  Are they equal? ${Math.abs(liAmount - expAmount) < 0.005}`);
         }
       }
@@ -235,7 +235,7 @@ export function useZohoData(): UseZohoDataReturn {
           ? providerMap.get(ze.Provider_Name.id) || ze.Provider_Name.name 
           : 'Unknown Provider';
 
-        const expectedAmount = coerceCurrency(ze.Expected_Amount);
+        const expectedAmount = coerceCurrency(ze.Expected_Fee_Amount);
         const allocatedAmount = coerceCurrency(ze.Allocated_Amount);
         const remainingAmount = coerceCurrency(ze.Remaining_Amount) || expectedAmount;
 
