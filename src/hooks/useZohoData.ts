@@ -54,6 +54,9 @@ interface UseZohoDataReturn {
   loadZohoData: () => Promise<{ payments: Payment[]; expectations: Expectation[] } | null>;
 }
 
+// Helper to add delay between API calls
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export function useZohoData(): UseZohoDataReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,23 +66,55 @@ export function useZohoData(): UseZohoDataReturn {
     setError(null);
 
     try {
-      // Fetch all data in parallel
-      const [paymentsRes, lineItemsRes, expectationsRes, providersRes] = await Promise.all([
-        supabase.functions.invoke('zoho-crm', { body: { action: 'getPayments' } }),
-        supabase.functions.invoke('zoho-crm', { body: { action: 'getPaymentLineItems' } }),
-        supabase.functions.invoke('zoho-crm', { body: { action: 'getExpectations' } }),
-        supabase.functions.invoke('zoho-crm', { body: { action: 'getProviders' } }),
-      ]);
-
-      if (paymentsRes.error) throw new Error(`Payments: ${paymentsRes.error.message}`);
-      if (lineItemsRes.error) throw new Error(`Line Items: ${lineItemsRes.error.message}`);
-      if (expectationsRes.error) throw new Error(`Expectations: ${expectationsRes.error.message}`);
+      // Fetch data SEQUENTIALLY with delays to avoid Zoho rate limiting
+      // Each call can take time due to pagination, so we stagger them
+      
+      console.log('[Zoho] Starting sequential data load to avoid rate limits...');
+      
+      // 1. Fetch providers first (smallest dataset, needed for mapping)
+      console.log('[Zoho] Loading providers...');
+      const providersRes = await supabase.functions.invoke('zoho-crm', { 
+        body: { action: 'getProviders' } 
+      });
       if (providersRes.error) throw new Error(`Providers: ${providersRes.error.message}`);
-
-      const zohoPayments: ZohoPayment[] = paymentsRes.data?.data || [];
-      const zohoLineItems: ZohoLineItem[] = lineItemsRes.data?.data || [];
-      const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
+      if (!providersRes.data?.success) throw new Error(`Providers: ${providersRes.data?.error || 'Unknown error'}`);
       const zohoProviders: ZohoProvider[] = providersRes.data?.data || [];
+      console.log(`[Zoho] Loaded ${zohoProviders.length} providers`);
+      
+      await delay(500); // 500ms delay between calls
+      
+      // 2. Fetch payments
+      console.log('[Zoho] Loading payments...');
+      const paymentsRes = await supabase.functions.invoke('zoho-crm', { 
+        body: { action: 'getPayments' } 
+      });
+      if (paymentsRes.error) throw new Error(`Payments: ${paymentsRes.error.message}`);
+      if (!paymentsRes.data?.success) throw new Error(`Payments: ${paymentsRes.data?.error || 'Unknown error'}`);
+      const zohoPayments: ZohoPayment[] = paymentsRes.data?.data || [];
+      console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
+      
+      await delay(500);
+      
+      // 3. Fetch line items (largest dataset, may take longer)
+      console.log('[Zoho] Loading payment line items...');
+      const lineItemsRes = await supabase.functions.invoke('zoho-crm', { 
+        body: { action: 'getPaymentLineItems' } 
+      });
+      if (lineItemsRes.error) throw new Error(`Line Items: ${lineItemsRes.error.message}`);
+      if (!lineItemsRes.data?.success) throw new Error(`Line Items: ${lineItemsRes.data?.error || 'Unknown error'}`);
+      const zohoLineItems: ZohoLineItem[] = lineItemsRes.data?.data || [];
+      console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
+      
+      await delay(500);
+      
+      // 4. Fetch expectations
+      console.log('[Zoho] Loading expectations...');
+      const expectationsRes = await supabase.functions.invoke('zoho-crm', { 
+        body: { action: 'getExpectations' } 
+      });
+      if (expectationsRes.error) throw new Error(`Expectations: ${expectationsRes.error.message}`);
+      if (!expectationsRes.data?.success) throw new Error(`Expectations: ${expectationsRes.data?.error || 'Unknown error'}`);
+      const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
 
       // Build provider lookup (id -> name with group resolution)
       const providerMap = new Map<string, string>();
