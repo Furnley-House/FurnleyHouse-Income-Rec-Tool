@@ -330,7 +330,8 @@ serve(async (req) => {
 
       case "getPayments": {
         // Fetch Bank_Payments with optional status filter
-        const fields = "Payment_ID,Provider_Name,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
+        // Field name is Payment_Provider (lookup) not Provider_Name
+        const fields = "Payment_ID,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
         const fetchParams: Record<string, string> = { fields };
         
         if (params.status) {

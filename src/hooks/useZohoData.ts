@@ -10,7 +10,7 @@ interface ZohoPayment {
   Bank_Reference?: string;
   Payment_Date?: string;
   Amount?: unknown;
-  Provider_Name?: { name: string; id: string };
+  Payment_Provider?: { name: string; id: string }; // Correct Zoho field name
   Status?: string;
   Reconciled_Amount?: unknown;
   Remaining_Amount?: unknown;
@@ -182,8 +182,8 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform payments
       const payments: Payment[] = zohoPayments.map(zp => {
-        const providerName = zp.Provider_Name?.id 
-          ? providerMap.get(zp.Provider_Name.id) || zp.Provider_Name.name 
+        const providerName = zp.Payment_Provider?.id 
+          ? providerMap.get(zp.Payment_Provider.id) || zp.Payment_Provider.name 
           : 'Unknown Provider';
         
         const paymentLineItems = lineItemsByPayment.get(zp.id) || [];
