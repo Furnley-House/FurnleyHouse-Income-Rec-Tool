@@ -115,7 +115,7 @@ async function fetchAllRecords(
   accessToken: string,
   module: string,
   params: Record<string, string> = {},
-  maxPages: number = 10
+  maxPages: number = 50  // Increased from 10 to support larger datasets (50 * 200 = 10,000 max)
 ): Promise<ZohoRecord[]> {
   const allRecords: ZohoRecord[] = [];
   let page = 1;
