@@ -115,7 +115,31 @@ export function useZohoData(): UseZohoDataReturn {
       if (expectationsRes.error) throw new Error(`Expectations: ${expectationsRes.error.message}`);
       if (!expectationsRes.data?.success) throw new Error(`Expectations: ${expectationsRes.data?.error || 'Unknown error'}`);
       const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
-
+      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
+      
+      // DEBUG: Log raw Zoho data to verify field mappings
+      console.log('[Zoho] DEBUG - Sample RAW line items (first 5):');
+      zohoLineItems.slice(0, 5).forEach((li, i) => {
+        console.log(`  [${i}] Plan_Reference: "${li.Plan_Reference}", Amount: ${li.Amount}, Client: "${li.Client_Name}"`);
+      });
+      
+      console.log('[Zoho] DEBUG - Sample RAW expectations (first 5):');
+      zohoExpectations.slice(0, 5).forEach((e, i) => {
+        console.log(`  [${i}] Plan_Policy_Reference: "${e.Plan_Policy_Reference}", Expected_Amount: ${e.Expected_Amount}, Client: "${e.Client_1?.name}"`);
+      });
+      
+      // Find a matching plan reference and compare amounts
+      const sampleLineItem = zohoLineItems.find(li => li.Plan_Reference && li.Plan_Reference.trim() !== '');
+      if (sampleLineItem) {
+        const matchingExp = zohoExpectations.find(e => e.Plan_Policy_Reference === sampleLineItem.Plan_Reference);
+        if (matchingExp) {
+          console.log('[Zoho] DEBUG - SAMPLE MATCH COMPARISON:');
+          console.log(`  Plan Reference: ${sampleLineItem.Plan_Reference}`);
+          console.log(`  Line Item Amount (Amount field): £${sampleLineItem.Amount}`);
+          console.log(`  Expectation Amount (Expected_Amount field): £${matchingExp.Expected_Amount}`);
+          console.log(`  Are they equal? ${sampleLineItem.Amount === matchingExp.Expected_Amount}`);
+        }
+      }
       // Build provider lookup (id -> name with group resolution)
       const providerMap = new Map<string, string>();
       zohoProviders.forEach(p => {
