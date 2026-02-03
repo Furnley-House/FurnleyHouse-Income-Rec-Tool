@@ -161,13 +161,27 @@ export function useZohoData(): UseZohoDataReturn {
           status: ze.Status?.toLowerCase() === 'matched' ? 'matched' : 'unmatched' as const,
           allocatedAmount: 0,
           remainingAmount: ze.Expected_Amount || 0,
-          matchedToPayments: [],
-        };
-      });
+        matchedToPayments: [],
+      };
+    });
 
-      console.log(`[Zoho] Loaded ${payments.length} payments, ${expectations.length} expectations`);
+    // Count total line items across all payments
+    const totalLineItems = payments.reduce((sum, p) => sum + p.lineItems.length, 0);
+    
+    // Sample provider names for debugging
+    const paymentProviders = [...new Set(payments.map(p => p.providerName))].slice(0, 10);
+    const expectationProviders = [...new Set(expectations.map(e => e.providerName))].slice(0, 10);
+    
+    console.log(`[Zoho] Loaded ${payments.length} payments with ${totalLineItems} total line items`);
+    console.log(`[Zoho] Loaded ${expectations.length} expectations`);
+    console.log(`[Zoho] Payment providers (sample):`, paymentProviders);
+    console.log(`[Zoho] Expectation providers (sample):`, expectationProviders);
+    
+    // Sample calculation dates for debugging
+    const sampleCalcDates = expectations.slice(0, 5).map(e => ({ client: e.clientName, date: e.calculationDate, provider: e.providerName }));
+    console.log(`[Zoho] Sample expectations:`, sampleCalcDates);
 
-      return { payments, expectations };
+    return { payments, expectations };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
       console.error('[Zoho] Error:', message);
