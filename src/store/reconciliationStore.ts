@@ -127,7 +127,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   expectationFilters: {
     searchTerm: '',
     status: 'all',
-    monthRange: 'payment' // Default to payment month only
+    monthRange: 'all' // Default to show all expectations (no date filtering)
   },
   
   tolerance: 5, // 5% default tolerance
