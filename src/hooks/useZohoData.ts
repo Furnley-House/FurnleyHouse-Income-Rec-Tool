@@ -40,8 +40,8 @@ interface ZohoExpectation {
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
-  // Provider_ID is a picklist field - returns the provider name directly as a string
-  Provider_ID?: string;
+  // Provider is a lookup field to Providers module (returns {name, id})
+  Provider?: { name: string; id: string };
   Adviser_Name?: string;
   Superbia_Company?: string;
   Status?: string;
@@ -235,8 +235,8 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform expectations
       const expectations: Expectation[] = zohoExpectations.map(ze => {
-        // Provider_ID is a picklist field - it returns the provider name directly as a string
-        const providerName = ze.Provider_ID || 'Unknown Provider';
+        // Provider is a lookup field - use the name for display and matching
+        const providerName = ze.Provider?.name || 'Unknown Provider';
 
         const expectedAmount = coerceCurrency(ze.Expected_Fee_Amount);
         const allocatedAmount = coerceCurrency(ze.Allocated_Amount);
