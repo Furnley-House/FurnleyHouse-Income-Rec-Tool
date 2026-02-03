@@ -55,10 +55,8 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     }).format(amount);
   };
   
-  // Calculate potential matches at each tolerance level
-  const calculateMatchesAtTolerance = (tolerancePercent: number): PendingMatch[] => {
-    console.log(`[Prescreening] Calculating matches at ${tolerancePercent}% tolerance`);
-    
+  // Calculate ALL potential matches with their variances (no tolerance filter)
+  const calculateAllPotentialMatches = (): PendingMatch[] => {
     const pendingLineItemIds = pendingMatches.map(pm => pm.lineItemId);
     const pendingExpectationIds = pendingMatches.map(pm => pm.expectationId);
     
@@ -70,30 +68,18 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       e.status === 'unmatched' && !pendingExpectationIds.includes(e.id)
     );
     
-    console.log(`[Prescreening] ${unmatchedLineItems.length} unmatched line items, ${unmatchedExpectations.length} unmatched expectations`);
-    
     const matches: PendingMatch[] = [];
     const usedExpectationIds = new Set<string>();
     
     for (const lineItem of unmatchedLineItems) {
-      // Skip if line item has no plan reference - can't auto-match without it
-      if (!lineItem.planReference || lineItem.planReference.trim() === '') {
-        console.log(`[Prescreening] Skipping line item "${lineItem.clientName}" - no plan reference`);
-        continue;
-      }
+      if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
       
-      // Find expectation with EXACT plan reference match
-      const matchingExpectation = unmatchedExpectations.find(e => {
-        const refMatch = e.planReference && 
-          e.planReference.trim() !== '' &&
-          e.planReference === lineItem.planReference &&
-          !usedExpectationIds.has(e.id);
-        
-        if (refMatch) {
-          console.log(`[Prescreening] Plan reference match: "${lineItem.planReference}" === "${e.planReference}"`);
-        }
-        return refMatch;
-      });
+      const matchingExpectation = unmatchedExpectations.find(e =>
+        e.planReference && 
+        e.planReference.trim() !== '' &&
+        e.planReference === lineItem.planReference &&
+        !usedExpectationIds.has(e.id)
+      );
       
       if (matchingExpectation) {
         const variance = lineItem.amount - matchingExpectation.expectedAmount;
@@ -101,28 +87,64 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
           ? (variance / matchingExpectation.expectedAmount) * 100
           : 0;
         
-        console.log(`[Prescreening] Checking tolerance: ${Math.abs(variancePercentage).toFixed(2)}% vs allowed ${tolerancePercent}%`);
-        
-        if (Math.abs(variancePercentage) <= tolerancePercent) {
-          console.log(`[Prescreening] ✓ MATCH: ${lineItem.clientName} (${lineItem.planReference}) - variance ${variancePercentage.toFixed(2)}% within ${tolerancePercent}%`);
-          usedExpectationIds.add(matchingExpectation.id);
-          matches.push({
-            lineItemId: lineItem.id,
-            expectationId: matchingExpectation.id,
-            lineItemAmount: lineItem.amount,
-            expectedAmount: matchingExpectation.expectedAmount,
-            variance,
-            variancePercentage,
-            isWithinTolerance: true
-          });
-        } else {
-          console.log(`[Prescreening] ✗ REJECTED: ${lineItem.clientName} - variance ${variancePercentage.toFixed(2)}% exceeds ${tolerancePercent}%`);
-        }
+        usedExpectationIds.add(matchingExpectation.id);
+        matches.push({
+          lineItemId: lineItem.id,
+          expectationId: matchingExpectation.id,
+          lineItemAmount: lineItem.amount,
+          expectedAmount: matchingExpectation.expectedAmount,
+          variance,
+          variancePercentage,
+          isWithinTolerance: true // Will be evaluated per tolerance level
+        });
       }
     }
     
-    console.log(`[Prescreening] Found ${matches.length} matches at ${tolerancePercent}% tolerance`);
     return matches;
+  };
+  
+  // Filter matches by tolerance level
+  const filterMatchesByTolerance = (allMatches: PendingMatch[], tolerancePercent: number): PendingMatch[] => {
+    return allMatches.filter(m => Math.abs(m.variancePercentage) <= tolerancePercent);
+  };
+  
+  // Calculate potential matches at each tolerance level (for running)
+  const calculateMatchesAtTolerance = (tolerancePercent: number): PendingMatch[] => {
+    console.log(`[Prescreening] Calculating matches at ${tolerancePercent}% tolerance`);
+    
+    const allMatches = calculateAllPotentialMatches();
+    const filteredMatches = filterMatchesByTolerance(allMatches, tolerancePercent);
+    
+    // Log variance distribution
+    const varianceDistribution = {
+      exact: allMatches.filter(m => Math.abs(m.variancePercentage) === 0).length,
+      within0_5: allMatches.filter(m => Math.abs(m.variancePercentage) > 0 && Math.abs(m.variancePercentage) <= 0.5).length,
+      within1: allMatches.filter(m => Math.abs(m.variancePercentage) > 0.5 && Math.abs(m.variancePercentage) <= 1).length,
+      within2: allMatches.filter(m => Math.abs(m.variancePercentage) > 1 && Math.abs(m.variancePercentage) <= 2).length,
+      within5: allMatches.filter(m => Math.abs(m.variancePercentage) > 2 && Math.abs(m.variancePercentage) <= 5).length,
+      over5: allMatches.filter(m => Math.abs(m.variancePercentage) > 5).length
+    };
+    
+    console.log(`[Prescreening] VARIANCE DISTRIBUTION for ${allMatches.length} plan reference matches:`);
+    console.log(`  - Exact (0%): ${varianceDistribution.exact}`);
+    console.log(`  - 0-0.5%: ${varianceDistribution.within0_5}`);
+    console.log(`  - 0.5-1%: ${varianceDistribution.within1}`);
+    console.log(`  - 1-2%: ${varianceDistribution.within2}`);
+    console.log(`  - 2-5%: ${varianceDistribution.within5}`);
+    console.log(`  - >5% (rejected): ${varianceDistribution.over5}`);
+    
+    // Log individual matches with high variance
+    allMatches
+      .filter(m => Math.abs(m.variancePercentage) > 0)
+      .slice(0, 20)
+      .forEach(m => {
+        const lineItem = payment.lineItems.find(li => li.id === m.lineItemId);
+        const exp = expectations.find(e => e.id === m.expectationId);
+        console.log(`[Prescreening] ${lineItem?.planReference}: £${m.lineItemAmount.toFixed(2)} vs £${m.expectedAmount.toFixed(2)} = ${m.variancePercentage.toFixed(2)}% variance`);
+      });
+    
+    console.log(`[Prescreening] At ${tolerancePercent}% tolerance: ${filteredMatches.length} matches accepted`);
+    return filteredMatches;
   };
   
   // Preview counts for each tolerance level
