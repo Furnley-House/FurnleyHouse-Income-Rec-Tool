@@ -70,6 +70,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     
     const matches: PendingMatch[] = [];
     const usedExpectationIds = new Set<string>();
+    let skippedZeroOrInvalidExpectedAmount = 0;
     
     for (const lineItem of unmatchedLineItems) {
       if (!lineItem.planReference || lineItem.planReference.trim() === '') continue;
@@ -82,6 +83,13 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       );
       
       if (matchingExpectation) {
+        // Defensive: expectations with 0/invalid expected amount should never be treated as exact matches.
+        // If these exist in the dataset, % variance is undefined and would incorrectly look like 0.
+        if (!(matchingExpectation.expectedAmount > 0)) {
+          skippedZeroOrInvalidExpectedAmount += 1;
+          continue;
+        }
+
         const variance = lineItem.amount - matchingExpectation.expectedAmount;
         const variancePercentage = matchingExpectation.expectedAmount > 0
           ? (variance / matchingExpectation.expectedAmount) * 100
@@ -99,6 +107,12 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
         });
       }
     }
+
+    if (skippedZeroOrInvalidExpectedAmount > 0) {
+      console.warn(
+        `[Prescreening] Skipped ${skippedZeroOrInvalidExpectedAmount} plan-reference matches because the expectation had expectedAmount <= 0 (data issue).`
+      );
+    }
     
     return matches;
   };
@@ -114,10 +128,25 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     
     const allMatches = calculateAllPotentialMatches();
     const filteredMatches = filterMatchesByTolerance(allMatches, tolerancePercent);
+
+    // Data quality signal: unmatched expectations with invalid expectedAmount
+    const pendingExpectationIds = pendingMatches.map(pm => pm.expectationId);
+    const invalidExpectedAmountExpectations = expectations.filter(e =>
+      e.status === 'unmatched' &&
+      !pendingExpectationIds.includes(e.id) &&
+      !(e.expectedAmount > 0)
+    ).length;
+    if (invalidExpectedAmountExpectations > 0) {
+      console.warn(
+        `[Prescreening] ${invalidExpectedAmountExpectations} unmatched expectations have expectedAmount <= 0. These cannot be tolerance-matched reliably.`
+      );
+    }
     
     // Log variance distribution
+    // "Exact" should mean currency-identical to the penny (not variancePercentage === 0)
+    const EPS_PENNIES = 0.005; // half a penny threshold
     const varianceDistribution = {
-      exact: allMatches.filter(m => Math.abs(m.variancePercentage) === 0).length,
+      exact: allMatches.filter(m => Math.abs(m.variance) < EPS_PENNIES).length,
       within0_5: allMatches.filter(m => Math.abs(m.variancePercentage) > 0 && Math.abs(m.variancePercentage) <= 0.5).length,
       within1: allMatches.filter(m => Math.abs(m.variancePercentage) > 0.5 && Math.abs(m.variancePercentage) <= 1).length,
       within2: allMatches.filter(m => Math.abs(m.variancePercentage) > 1 && Math.abs(m.variancePercentage) <= 2).length,
@@ -135,12 +164,13 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     
     // Log individual matches with high variance
     allMatches
-      .filter(m => Math.abs(m.variancePercentage) > 0)
+      .filter(m => Math.abs(m.variance) >= 0.01)
       .slice(0, 20)
       .forEach(m => {
         const lineItem = payment.lineItems.find(li => li.id === m.lineItemId);
-        const exp = expectations.find(e => e.id === m.expectationId);
-        console.log(`[Prescreening] ${lineItem?.planReference}: £${m.lineItemAmount.toFixed(2)} vs £${m.expectedAmount.toFixed(2)} = ${m.variancePercentage.toFixed(2)}% variance`);
+        console.log(
+          `[Prescreening] ${lineItem?.planReference}: £${m.lineItemAmount.toFixed(2)} vs £${m.expectedAmount.toFixed(2)} = £${m.variance.toFixed(2)} (${m.variancePercentage.toFixed(2)}%)`
+        );
       });
     
     console.log(`[Prescreening] At ${tolerancePercent}% tolerance: ${filteredMatches.length} matches accepted`);
