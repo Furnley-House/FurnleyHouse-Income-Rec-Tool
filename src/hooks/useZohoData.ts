@@ -6,40 +6,60 @@ export type DataSource = 'mock' | 'zoho';
 
 interface ZohoPayment {
   id: string;
-  Name: string;
+  Payment_Reference?: string;
   Bank_Reference?: string;
   Payment_Date?: string;
-  Total_Amount?: number;
-  Provider?: { name: string; id: string };
+  Amount?: unknown;
+  Provider_Name?: { name: string; id: string };
   Status?: string;
+  Reconciled_Amount?: unknown;
+  Remaining_Amount?: unknown;
+  Notes?: string;
 }
 
 interface ZohoLineItem {
   id: string;
-  Name: string;
   Bank_Payment?: { name: string; id: string };
   Plan_Reference?: string;
   Client_Name?: string;
   Adviser_Name?: string;
-  Amount?: number;
+  Amount?: unknown;
   Fee_Category?: string;
   Fee_Type?: string;
   Description?: string;
+  Status?: string;
+  Matched_Expectation?: { name: string; id: string };
+  Match_Notes?: string;
 }
 
 interface ZohoExpectation {
   id: string;
-  Name: string;
   Plan_Policy_Reference?: string;
   Client_1?: { name: string; id: string };
-  Expected_Amount?: number;
+  Expected_Amount?: unknown;
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
-  Provider?: { name: string; id: string };
-  Adviser?: string;
+  Provider_Name?: { name: string; id: string };
+  Adviser_Name?: string;
   Superbia_Company?: string;
   Status?: string;
+  Allocated_Amount?: unknown;
+  Remaining_Amount?: unknown;
+}
+
+function coerceCurrency(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^0-9.-]/g, '');
+    const n = Number.parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (value && typeof value === 'object') {
+    const maybeValue = (value as any).value;
+    if (maybeValue !== undefined) return coerceCurrency(maybeValue);
+  }
+  return 0;
 }
 
 interface ZohoProvider {
@@ -116,28 +136,30 @@ export function useZohoData(): UseZohoDataReturn {
       if (!expectationsRes.data?.success) throw new Error(`Expectations: ${expectationsRes.data?.error || 'Unknown error'}`);
       const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
       console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
-      
-      // DEBUG: Log raw Zoho data to verify field mappings
-      console.log('[Zoho] DEBUG - Sample RAW line items (first 5):');
-      zohoLineItems.slice(0, 5).forEach((li, i) => {
-        console.log(`  [${i}] Plan_Reference: "${li.Plan_Reference}", Amount: ${li.Amount}, Client: "${li.Client_Name}"`);
-      });
-      
-      console.log('[Zoho] DEBUG - Sample RAW expectations (first 5):');
-      zohoExpectations.slice(0, 5).forEach((e, i) => {
-        console.log(`  [${i}] Plan_Policy_Reference: "${e.Plan_Policy_Reference}", Expected_Amount: ${e.Expected_Amount}, Client: "${e.Client_1?.name}"`);
-      });
-      
+
+      // DEBUG: Verify raw keys + expected amount presence
+      if (zohoExpectations[0]) {
+        console.log('[Zoho] DEBUG - Expectation record keys (first record):', Object.keys(zohoExpectations[0] as any));
+      }
+
+      const rawExpectedAmounts = zohoExpectations
+        .slice(0, 50)
+        .map(e => coerceCurrency((e as any).Expected_Amount))
+        .filter(n => n > 0);
+      console.log(`[Zoho] DEBUG - Non-zero Expected_Amount count in first 50 expectations: ${rawExpectedAmounts.length}`);
+
       // Find a matching plan reference and compare amounts
       const sampleLineItem = zohoLineItems.find(li => li.Plan_Reference && li.Plan_Reference.trim() !== '');
       if (sampleLineItem) {
         const matchingExp = zohoExpectations.find(e => e.Plan_Policy_Reference === sampleLineItem.Plan_Reference);
         if (matchingExp) {
+          const liAmount = coerceCurrency(sampleLineItem.Amount);
+          const expAmount = coerceCurrency((matchingExp as any).Expected_Amount);
           console.log('[Zoho] DEBUG - SAMPLE MATCH COMPARISON:');
           console.log(`  Plan Reference: ${sampleLineItem.Plan_Reference}`);
-          console.log(`  Line Item Amount (Amount field): £${sampleLineItem.Amount}`);
-          console.log(`  Expectation Amount (Expected_Amount field): £${matchingExp.Expected_Amount}`);
-          console.log(`  Are they equal? ${sampleLineItem.Amount === matchingExp.Expected_Amount}`);
+          console.log(`  Line Item Amount: £${liAmount.toFixed(2)}`);
+          console.log(`  Expected Amount: £${expAmount.toFixed(2)}`);
+          console.log(`  Are they equal? ${Math.abs(liAmount - expAmount) < 0.005}`);
         }
       }
       // Build provider lookup (id -> name with group resolution)
@@ -160,8 +182,8 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform payments
       const payments: Payment[] = zohoPayments.map(zp => {
-        const providerName = zp.Provider?.id 
-          ? providerMap.get(zp.Provider.id) || zp.Provider.name 
+        const providerName = zp.Provider_Name?.id 
+          ? providerMap.get(zp.Provider_Name.id) || zp.Provider_Name.name 
           : 'Unknown Provider';
         
         const paymentLineItems = lineItemsByPayment.get(zp.id) || [];
@@ -172,54 +194,73 @@ export function useZohoData(): UseZohoDataReturn {
           planReference: li.Plan_Reference || '',
           agencyCode: undefined, // Not in Zoho yet
           adviserName: li.Adviser_Name,
-          feeType: li.Fee_Type?.toLowerCase(),
           feeCategory: (li.Fee_Category?.toLowerCase() === 'initial' ? 'initial' : 'ongoing') as 'initial' | 'ongoing',
-          amount: li.Amount || 0,
+          amount: coerceCurrency(li.Amount),
           description: li.Description || `${li.Fee_Category || 'Ongoing'} ${li.Fee_Type || 'fee'}`,
-          status: 'unmatched' as const,
+          status: (li.Status?.toLowerCase() === 'matched'
+            ? 'matched'
+            : li.Status?.toLowerCase() === 'approved_unmatched'
+              ? 'approved_unmatched'
+              : 'unmatched') as 'unmatched' | 'matched' | 'approved_unmatched',
+          matchedExpectationId: li.Matched_Expectation?.id,
+          matchNotes: li.Match_Notes,
         }));
 
-        const totalAmount = zp.Total_Amount || lineItems.reduce((sum, li) => sum + li.amount, 0);
+        const totalAmount = coerceCurrency(zp.Amount) || lineItems.reduce((sum, li) => sum + li.amount, 0);
 
         return {
           id: zp.id,
           providerName,
-          paymentReference: zp.Name,
+          paymentReference: zp.Payment_Reference || 'Unknown Payment',
           amount: totalAmount,
           paymentDate: zp.Payment_Date || new Date().toISOString().split('T')[0],
           bankReference: zp.Bank_Reference || '',
           statementItemCount: lineItems.length,
-          status: 'unreconciled' as const,
-          reconciledAmount: 0,
-          remainingAmount: totalAmount,
+          status: (zp.Status?.toLowerCase() === 'reconciled'
+            ? 'reconciled'
+            : zp.Status?.toLowerCase() === 'in_progress'
+              ? 'in_progress'
+              : 'unreconciled') as 'unreconciled' | 'in_progress' | 'reconciled',
+          reconciledAmount: coerceCurrency(zp.Reconciled_Amount) || 0,
+          remainingAmount: coerceCurrency(zp.Remaining_Amount) || totalAmount,
           matchedExpectationIds: [],
-          notes: '',
+          notes: zp.Notes || '',
           lineItems,
         };
       });
 
       // Transform expectations
       const expectations: Expectation[] = zohoExpectations.map(ze => {
-        const providerName = ze.Provider?.id 
-          ? providerMap.get(ze.Provider.id) || ze.Provider.name 
+        const providerName = ze.Provider_Name?.id 
+          ? providerMap.get(ze.Provider_Name.id) || ze.Provider_Name.name 
           : 'Unknown Provider';
+
+        const expectedAmount = coerceCurrency(ze.Expected_Amount);
+        const allocatedAmount = coerceCurrency(ze.Allocated_Amount);
+        const remainingAmount = coerceCurrency(ze.Remaining_Amount) || expectedAmount;
 
         return {
           id: ze.id,
           clientName: ze.Client_1?.name || 'Unknown Client',
           planReference: ze.Plan_Policy_Reference || '',
-          expectedAmount: ze.Expected_Amount || 0,
+          expectedAmount,
           calculationDate: ze.Calculation_Date || new Date().toISOString().split('T')[0],
           fundReference: '',
           feeCategory: (ze.Fee_Category?.toLowerCase() === 'initial' ? 'initial' : 'ongoing') as 'initial' | 'ongoing',
           feeType: (ze.Fee_Type?.toLowerCase() || 'management') as 'management' | 'performance' | 'advisory' | 'custody',
           description: `${ze.Fee_Category || 'Ongoing'} ${ze.Fee_Type || 'fee'}`,
           providerName,
-          adviserName: ze.Adviser || '',
+          adviserName: ze.Adviser_Name || '',
           superbiaCompany: ze.Superbia_Company || '',
-          status: ze.Status?.toLowerCase() === 'matched' ? 'matched' : 'unmatched' as const,
-          allocatedAmount: 0,
-          remainingAmount: ze.Expected_Amount || 0,
+          status: (ze.Status?.toLowerCase() === 'matched'
+            ? 'matched'
+            : ze.Status?.toLowerCase() === 'partial'
+              ? 'partial'
+              : ze.Status?.toLowerCase() === 'invalidated'
+                ? 'invalidated'
+                : 'unmatched') as 'unmatched' | 'partial' | 'matched' | 'invalidated',
+          allocatedAmount,
+          remainingAmount,
         matchedToPayments: [],
       };
     });
