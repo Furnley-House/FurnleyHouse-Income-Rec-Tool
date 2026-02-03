@@ -2,6 +2,7 @@
 
 export interface PaymentLineItem {
   id: string;
+  zohoId?: string; // Zoho record ID for sync operations
   clientName: string;
   planReference: string;
   agencyCode?: string;
@@ -27,6 +28,7 @@ export interface PendingMatch {
 
 export interface Payment {
   id: string;
+  zohoId?: string; // Zoho record ID for sync operations
   providerName: string;
   paymentReference: string;
   amount: number;
@@ -49,6 +51,7 @@ export interface Payment {
 
 export interface Expectation {
   id: string;
+  zohoId?: string; // Zoho record ID for sync operations
   clientName: string;
   planReference: string;
   expectedAmount: number;

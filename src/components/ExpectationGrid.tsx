@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { useZohoSync } from '@/hooks/useZohoSync';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,8 @@ import {
   Eye,
   EyeOff,
   Calendar,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react';
 import {
   Select,
@@ -43,6 +45,7 @@ import { cn } from '@/lib/utils';
 export function ExpectationGrid() {
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [invalidateDialogOpen, setInvalidateDialogOpen] = useState(false);
+  const [isInvalidating, setIsInvalidating] = useState(false);
   const [selectedExpForMatch, setSelectedExpForMatch] = useState<string | null>(null);
   const [selectedExpForInvalidate, setSelectedExpForInvalidate] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState('');
@@ -59,8 +62,12 @@ export function ExpectationGrid() {
     calculateVariance,
     addPendingMatch,
     invalidateExpectation,
-    tolerance
+    tolerance,
+    dataSource,
+    expectations: allExpectationsFromStore
   } = useReconciliationStore();
+  
+  const { syncInvalidation } = useZohoSync();
   
   const payment = getSelectedPayment();
   const allExpectations = getRelevantExpectations();
@@ -133,9 +140,26 @@ export function ExpectationGrid() {
     setInvalidateDialogOpen(true);
   };
   
-  const handleConfirmInvalidation = () => {
+  const handleConfirmInvalidation = async () => {
     if (selectedExpForInvalidate && invalidationReason.trim()) {
-      invalidateExpectation(selectedExpForInvalidate, invalidationReason.trim());
+      setIsInvalidating(true);
+      
+      try {
+        // First, update locally
+        invalidateExpectation(selectedExpForInvalidate, invalidationReason.trim());
+        
+        // If using Zoho, sync to CRM
+        if (dataSource === 'zoho') {
+          const expectation = allExpectationsFromStore.find(e => e.id === selectedExpForInvalidate);
+          await syncInvalidation({
+            expectationZohoId: expectation?.zohoId || selectedExpForInvalidate,
+            reason: invalidationReason.trim(),
+          });
+        }
+      } finally {
+        setIsInvalidating(false);
+      }
+      
       setInvalidateDialogOpen(false);
       setSelectedExpForInvalidate(null);
       setInvalidationReason('');
@@ -657,17 +681,26 @@ export function ExpectationGrid() {
           </div>
           
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setInvalidateDialogOpen(false)}>
+            <Button variant="ghost" onClick={() => setInvalidateDialogOpen(false)} disabled={isInvalidating}>
               Cancel
             </Button>
             <Button 
               variant="destructive"
               onClick={handleConfirmInvalidation}
-              disabled={!invalidationReason.trim()}
+              disabled={!invalidationReason.trim() || isInvalidating}
               className="gap-2"
             >
-              <XCircle className="h-4 w-4" />
-              Mark as Invalid
+              {isInvalidating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4" />
+                  Mark as Invalid
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
