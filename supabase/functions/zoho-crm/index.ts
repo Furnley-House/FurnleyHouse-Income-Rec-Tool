@@ -274,7 +274,7 @@ serve(async (req) => {
 
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
-        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider_Name,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
+        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider_Name,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
         
         const conditions: string[] = [];
         
