@@ -1,1 +1,7 @@
 project_id = "exutulyxzcdoehxpozdq"
+
+[functions.zoho-crm]
+verify_jwt = false
+
+[functions.zoho-token-exchange]
+verify_jwt = false
