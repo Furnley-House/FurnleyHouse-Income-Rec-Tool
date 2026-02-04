@@ -11,6 +11,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
 } from '@/components/ui/select';
 import {
   Tooltip,
@@ -371,24 +373,52 @@ export function MappingReviewStep({
                           <SelectTrigger className="w-[200px]">
                             <SelectValue placeholder="Select field..." />
                           </SelectTrigger>
-                          <SelectContent className="bg-popover border shadow-lg z-50">
+                          <SelectContent className="bg-popover border shadow-lg z-50 max-h-[300px]">
                             <SelectItem value="_ignore">
                               <span className="text-muted-foreground">— Skip this column —</span>
                             </SelectItem>
-                            {INTERNAL_FIELDS.map((field) => {
-                              const fieldHasDefault = defaultValues.some(d => d.targetField === field.value && d.enabled);
-                              return (
+                            
+                            {/* CSV Mappable Fields */}
+                            <SelectGroup>
+                              <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                                Map from CSV Column
+                              </SelectLabel>
+                              {INTERNAL_FIELDS.filter(field => {
+                                const fieldHasDefault = defaultValues.some(d => d.targetField === field.value && d.enabled);
+                                return !fieldHasDefault;
+                              }).map((field) => (
                                 <SelectItem 
                                   key={field.value} 
                                   value={field.value}
-                                  disabled={fieldHasDefault}
                                 >
                                   {field.label}
                                   {field.required && <span className="text-destructive ml-1">*</span>}
-                                  {fieldHasDefault && <span className="text-muted-foreground ml-1">(has default)</span>}
                                 </SelectItem>
-                              );
-                            })}
+                              ))}
+                            </SelectGroup>
+                            
+                            {/* Fields with Header Defaults */}
+                            {defaultValues.some(d => d.enabled) && (
+                              <SelectGroup>
+                                <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5 border-t mt-1 pt-2">
+                                  Using Default Value (from header)
+                                </SelectLabel>
+                                {INTERNAL_FIELDS.filter(field => {
+                                  const fieldHasDefault = defaultValues.some(d => d.targetField === field.value && d.enabled);
+                                  return fieldHasDefault;
+                                }).map((field) => (
+                                  <SelectItem 
+                                    key={field.value} 
+                                    value={field.value}
+                                    disabled
+                                    className="opacity-50"
+                                  >
+                                    {field.label}
+                                    <span className="text-muted-foreground ml-1 text-xs">(inherited)</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            )}
                           </SelectContent>
                         </Select>
                       </td>
