@@ -3,28 +3,31 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { PaymentDetailsStep } from './steps/PaymentDetailsStep';
 import { FileUploadStep } from './steps/FileUploadStep';
 import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
 import { MappingReviewStep } from './steps/MappingReviewStep';
 import { ValidationStep } from './steps/ValidationStep';
-import { WizardState, FileUploadInputs, AIMappingResult, FieldMapping } from '../types';
+import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping } from '../types';
 
-type WizardStep = 'upload' | 'analyzing' | 'review' | 'validation';
+type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
 
 const STEP_LABELS: Record<WizardStep, string> = {
+  payment: 'Payment',
   upload: 'Upload',
   analyzing: 'Analyzing',
   review: 'Review',
   validation: 'Confirm',
 };
 
-const STEP_ORDER: WizardStep[] = ['upload', 'analyzing', 'review', 'validation'];
+const STEP_ORDER: WizardStep[] = ['payment', 'upload', 'analyzing', 'review', 'validation'];
 
 export function CSVMapperPage() {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState<WizardStep>('upload');
+  const [currentStep, setCurrentStep] = useState<WizardStep>('payment');
   const [wizardState, setWizardState] = useState<WizardState>({
-    step: 'upload',
+    step: 'payment',
+    paymentHeader: null,
     fileInputs: null,
     aiResult: null,
     finalMappings: [],
@@ -33,8 +36,10 @@ export function CSVMapperPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleBack = () => {
-    if (currentStep === 'upload') {
+    if (currentStep === 'payment') {
       navigate('/');
+    } else if (currentStep === 'upload') {
+      setCurrentStep('payment');
     } else if (currentStep === 'analyzing') {
       setCurrentStep('upload');
     } else if (currentStep === 'review') {
@@ -42,6 +47,11 @@ export function CSVMapperPage() {
     } else if (currentStep === 'validation') {
       setCurrentStep('review');
     }
+  };
+
+  const handlePaymentDetailsComplete = (inputs: PaymentHeaderInputs) => {
+    setWizardState(prev => ({ ...prev, paymentHeader: inputs }));
+    setCurrentStep('upload');
   };
 
   const handleFileUploadComplete = (inputs: FileUploadInputs) => {
@@ -81,7 +91,7 @@ export function CSVMapperPage() {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       toast.success('Import completed successfully!', {
-        description: `Imported ${wizardState.fileInputs?.csvData.totalRows} rows from ${wizardState.fileInputs?.providerName}`,
+        description: `Imported ${wizardState.fileInputs?.csvData.totalRows} line items for ${wizardState.paymentHeader?.providerName}`,
       });
       
       // Navigate back to home or to reconciliation
@@ -155,30 +165,44 @@ export function CSVMapperPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {currentStep === 'upload' && (
-          <FileUploadStep onComplete={handleFileUploadComplete} />
+        {currentStep === 'payment' && (
+          <PaymentDetailsStep 
+            onComplete={handlePaymentDetailsComplete}
+            initialValues={wizardState.paymentHeader}
+          />
         )}
 
-        {currentStep === 'analyzing' && wizardState.fileInputs && (
+        {currentStep === 'upload' && wizardState.paymentHeader && (
+          <FileUploadStep 
+            paymentHeader={wizardState.paymentHeader}
+            onComplete={handleFileUploadComplete}
+            onBack={handleBack}
+          />
+        )}
+
+        {currentStep === 'analyzing' && wizardState.paymentHeader && wizardState.fileInputs && (
           <MappingAnalysisStep 
             fileInputs={wizardState.fileInputs}
+            paymentHeader={wizardState.paymentHeader}
             onComplete={handleAnalysisComplete}
             onError={handleAnalysisError}
           />
         )}
 
-        {currentStep === 'review' && wizardState.fileInputs && wizardState.aiResult && (
+        {currentStep === 'review' && wizardState.paymentHeader && wizardState.fileInputs && wizardState.aiResult && (
           <MappingReviewStep
             fileInputs={wizardState.fileInputs}
+            paymentHeader={wizardState.paymentHeader}
             aiResult={wizardState.aiResult}
             onBack={handleBack}
             onComplete={handleReviewComplete}
           />
         )}
 
-        {currentStep === 'validation' && wizardState.fileInputs && (
+        {currentStep === 'validation' && wizardState.paymentHeader && wizardState.fileInputs && (
           <ValidationStep
             fileInputs={wizardState.fileInputs}
+            paymentHeader={wizardState.paymentHeader}
             mappings={wizardState.finalMappings}
             rowOffset={wizardState.rowOffset}
             onBack={handleBack}

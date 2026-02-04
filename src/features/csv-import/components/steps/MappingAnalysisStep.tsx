@@ -1,16 +1,17 @@
 import { useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Brain, Loader2, Sparkles } from 'lucide-react';
-import { FileUploadInputs, AIMappingResult } from '../../types';
+import { FileUploadInputs, PaymentHeaderInputs, AIMappingResult } from '../../types';
 import { useAIMapping } from '../../hooks/useAIMapping';
 
 interface MappingAnalysisStepProps {
   fileInputs: FileUploadInputs;
+  paymentHeader: PaymentHeaderInputs;
   onComplete: (result: AIMappingResult) => void;
   onError: () => void;
 }
 
-export function MappingAnalysisStep({ fileInputs, onComplete, onError }: MappingAnalysisStepProps) {
+export function MappingAnalysisStep({ fileInputs, paymentHeader, onComplete, onError }: MappingAnalysisStepProps) {
   const { analyzeCSV, isAnalyzing, error } = useAIMapping({
     onSuccess: onComplete,
     onError: () => onError(),
@@ -22,7 +23,7 @@ export function MappingAnalysisStep({ fileInputs, onComplete, onError }: Mapping
       fileInputs.csvData.columns,
       fileInputs.paymentDateColumn,
       fileInputs.paymentReferenceColumn,
-      fileInputs.providerName
+      paymentHeader.providerName
     );
   }, []); // Run once on mount
 
@@ -70,7 +71,7 @@ export function MappingAnalysisStep({ fileInputs, onComplete, onError }: Mapping
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Provider</span>
-                  <span className="font-medium">{fileInputs.providerName}</span>
+                  <span className="font-medium">{paymentHeader.providerName}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Rows</span>

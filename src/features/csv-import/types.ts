@@ -51,12 +51,21 @@ export const INTERNAL_FIELDS = [
 
 export type InternalFieldValue = typeof INTERNAL_FIELDS[number]['value'];
 
-// Step 1: User inputs from file upload
+// Payment header details (collected first)
+export interface PaymentHeaderInputs {
+  providerName: string;
+  providerId?: string;
+  paymentDate: string;
+  paymentReference: string;
+  paymentAmount?: number;
+  notes?: string;
+}
+
+// Step 2: User inputs from file upload
 export interface FileUploadInputs {
   csvData: CSVParseResult;
   paymentDateColumn: string;
   paymentReferenceColumn: string;
-  providerName: string;
 }
 
 // AI mapping analysis response
@@ -77,7 +86,8 @@ export interface AIMappingResult {
 
 // Complete wizard state
 export interface WizardState {
-  step: 'upload' | 'analyzing' | 'review' | 'validation';
+  step: 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
+  paymentHeader: PaymentHeaderInputs | null;
   fileInputs: FileUploadInputs | null;
   aiResult: AIMappingResult | null;
   finalMappings: FieldMapping[];
