@@ -20,6 +20,26 @@ export interface FieldMapping {
   ignored: boolean;
 }
 
+// Fields that can inherit from payment header or have hardcoded defaults
+export interface DefaultFieldValue {
+  targetField: string;
+  source: 'header' | 'hardcoded';
+  headerField?: keyof PaymentHeaderInputs;
+  hardcodedValue?: string;
+  enabled: boolean;
+}
+
+// Predefined inheritable fields from payment header
+export const INHERITABLE_FIELDS: { targetField: string; headerField: keyof PaymentHeaderInputs; label: string }[] = [
+  { targetField: 'payment_date', headerField: 'paymentDate', label: 'Payment Date' },
+];
+
+// Fields that can have hardcoded default values
+export const DEFAULTABLE_FIELDS = [
+  { value: 'fee_category', label: 'Fee Category', options: ['initial', 'ongoing', 'ad-hoc'] },
+  { value: 'transaction_type', label: 'Transaction Type', options: ['credit', 'debit', 'fee', 'commission'] },
+] as const;
+
 export interface ValidationError {
   row: number;
   column: string;
@@ -91,6 +111,7 @@ export interface WizardState {
   fileInputs: FileUploadInputs | null;
   aiResult: AIMappingResult | null;
   finalMappings: FieldMapping[];
+  defaultValues: DefaultFieldValue[];
   rowOffset: number;
 }
 
