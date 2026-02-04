@@ -12,8 +12,6 @@ interface CSVColumn {
 
 interface MappingRequest {
   columns: CSVColumn[];
-  paymentDateColumn: string;
-  paymentReferenceColumn: string;
   providerName: string;
 }
 
@@ -28,7 +26,7 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const { columns, paymentDateColumn, paymentReferenceColumn, providerName }: MappingRequest = await req.json();
+    const { columns, providerName }: MappingRequest = await req.json();
 
     // Build the analysis prompt
     const columnsDescription = columns.map(col => 
@@ -38,9 +36,9 @@ serve(async (req) => {
     const systemPrompt = `You are an expert at analyzing bank statement and financial CSV files. Your task is to map CSV columns to internal payment fields and detect any structural issues.
 
 INTERNAL FIELDS TO MAP TO:
-- payment_date: Date of the payment (REQUIRED)
+- payment_date: Date of the payment (REQUIRED) - Note: this may also be inherited from a payment header, so mark as medium confidence if unsure
 - amount: Payment amount, currency value (REQUIRED)  
-- payment_reference: Unique reference number for the payment (REQUIRED)
+- payment_reference: Unique reference number for the payment or policy/plan reference (REQUIRED)
 - client_name: Name of the client/payee
 - policy_reference: Policy or plan reference number (often starts with PF or similar)
 - description: Transaction description or memo
@@ -50,10 +48,9 @@ INTERNAL FIELDS TO MAP TO:
 - adviser_name: Name of the adviser
 - agency_code: Agency identifier code
 
-IMPORTANT CONTEXT:
-- The user has indicated that "${paymentDateColumn}" should be the payment date column
-- The user has indicated that "${paymentReferenceColumn}" should be the payment reference column
+CONTEXT:
 - The provider/source is: ${providerName}
+- The user can set defaults for fields like payment_date from a payment header, so if no clear date column exists, that's OK
 
 CONFIDENCE LEVELS:
 - "high": Clear match based on header name and data patterns
@@ -97,11 +94,10 @@ Respond with a JSON object matching this exact structure:
 
 RULES:
 1. Map every CSV column - use "ignore" for targetField if it shouldn't be imported
-2. Respect the user's indicated date and reference columns with high confidence
-3. Look for patterns in sample values to infer data types
-4. Policy references often start with PF followed by numbers/letters
-5. Amount columns have numeric values, possibly with currency symbols
-6. Return ONLY valid JSON, no markdown or explanation outside the JSON`;
+2. Look for patterns in sample values to infer data types
+3. Policy references often start with PF followed by numbers/letters
+4. Amount columns have numeric values, possibly with currency symbols
+5. Return ONLY valid JSON, no markdown or explanation outside the JSON`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

@@ -1,18 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { ArrowRight, ArrowLeft, FileSpreadsheet, Building2, Calendar, Hash } from 'lucide-react';
 import { CSVUpload } from '../CSVUpload';
 import { CSVParseResult, FileUploadInputs, PaymentHeaderInputs } from '../../types';
@@ -25,39 +14,14 @@ interface FileUploadStepProps {
 
 export function FileUploadStep({ paymentHeader, onComplete, onBack }: FileUploadStepProps) {
   const [csvData, setCsvData] = useState<CSVParseResult | null>(null);
-  const [paymentDateColumn, setPaymentDateColumn] = useState<string>('');
-  const [paymentReferenceColumn, setPaymentReferenceColumn] = useState<string>('');
 
   const handleFileLoaded = useCallback((result: CSVParseResult) => {
     setCsvData(result);
-    // Try to auto-detect date and reference columns
-    const headers = result.headers.map(h => h.toLowerCase());
-    
-    // Auto-detect date column
-    const dateKeywords = ['date', 'payment_date', 'transaction_date', 'value_date'];
-    const detectedDate = result.headers.find((h, i) => 
-      dateKeywords.some(k => headers[i].includes(k))
-    );
-    if (detectedDate) setPaymentDateColumn(detectedDate);
-
-    // Auto-detect reference column
-    const refKeywords = ['reference', 'ref', 'payment_ref', 'transaction_id', 'id', 'policy'];
-    const detectedRef = result.headers.find((h, i) => 
-      refKeywords.some(k => headers[i].includes(k))
-    );
-    if (detectedRef) setPaymentReferenceColumn(detectedRef);
   }, []);
 
-  const canProceed = csvData && paymentDateColumn && paymentReferenceColumn;
-
   const handleProceed = () => {
-    if (!csvData || !paymentDateColumn || !paymentReferenceColumn) return;
-    
-    onComplete({
-      csvData,
-      paymentDateColumn,
-      paymentReferenceColumn,
-    });
+    if (!csvData) return;
+    onComplete({ csvData });
   };
 
   return (
@@ -133,76 +97,12 @@ export function FileUploadStep({ paymentHeader, onComplete, onBack }: FileUpload
             </CardContent>
           </Card>
 
-          {/* Column Selection */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Identify Key Columns</CardTitle>
-              <CardDescription>
-                Help us understand your CSV structure by identifying these columns in your line items
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="dateColumn">Line Item Date Column *</Label>
-                  <Select value={paymentDateColumn} onValueChange={setPaymentDateColumn}>
-                    <SelectTrigger id="dateColumn">
-                      <SelectValue placeholder="Select date source" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover border shadow-lg z-50">
-                      {/* Header Inheritance Option */}
-                      <SelectGroup>
-                        <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
-                          From Payment Header
-                        </SelectLabel>
-                        <SelectItem value="__INHERIT_HEADER_DATE__">
-                          <span className="flex items-center gap-2">
-                            <Calendar className="h-3 w-3 text-primary" />
-                            Use header date: {paymentHeader.paymentDate}
-                          </span>
-                        </SelectItem>
-                      </SelectGroup>
-                      
-                      {/* CSV Column Options */}
-                      <SelectGroup>
-                        <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5 border-t mt-1 pt-2">
-                          From CSV Column
-                        </SelectLabel>
-                        {csvData.headers.map((header) => (
-                          <SelectItem key={header} value={header}>
-                            {header}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="refColumn">Policy/Plan Reference Column *</Label>
-                  <Select value={paymentReferenceColumn} onValueChange={setPaymentReferenceColumn}>
-                    <SelectTrigger id="refColumn">
-                      <SelectValue placeholder="Select reference column" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover border shadow-lg z-50">
-                      {csvData.headers.map((header) => (
-                        <SelectItem key={header} value={header}>
-                          {header}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           <div className="flex justify-between">
             <Button variant="outline" onClick={onBack}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
-            <Button onClick={handleProceed} disabled={!canProceed} size="lg">
+            <Button onClick={handleProceed} disabled={!csvData} size="lg">
               Analyze with AI
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
