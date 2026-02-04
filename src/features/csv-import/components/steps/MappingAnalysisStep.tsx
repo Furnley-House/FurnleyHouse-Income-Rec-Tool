@@ -21,8 +21,6 @@ export function MappingAnalysisStep({ fileInputs, paymentHeader, onComplete, onE
     // Start analysis when component mounts
     analyzeCSV(
       fileInputs.csvData.columns,
-      fileInputs.paymentDateColumn,
-      fileInputs.paymentReferenceColumn,
       paymentHeader.providerName
     );
   }, []); // Run once on mount

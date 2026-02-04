@@ -84,8 +84,6 @@ export interface PaymentHeaderInputs {
 // Step 2: User inputs from file upload
 export interface FileUploadInputs {
   csvData: CSVParseResult;
-  paymentDateColumn: string;
-  paymentReferenceColumn: string;
 }
 
 // AI mapping analysis response

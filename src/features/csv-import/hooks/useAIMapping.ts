@@ -15,8 +15,6 @@ export function useAIMapping(options?: UseAIMappingOptions) {
 
   const analyzeCSV = async (
     columns: CSVColumn[],
-    paymentDateColumn: string,
-    paymentReferenceColumn: string,
     providerName: string
   ) => {
     setIsAnalyzing(true);
@@ -26,8 +24,6 @@ export function useAIMapping(options?: UseAIMappingOptions) {
       const { data, error: fnError } = await supabase.functions.invoke('csv-mapping-ai', {
         body: {
           columns,
-          paymentDateColumn,
-          paymentReferenceColumn,
           providerName,
         },
       });
