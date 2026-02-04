@@ -8,7 +8,7 @@ import { FileUploadStep } from './steps/FileUploadStep';
 import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
 import { MappingReviewStep } from './steps/MappingReviewStep';
 import { ValidationStep } from './steps/ValidationStep';
-import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping } from '../types';
+import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, DefaultFieldValue } from '../types';
 
 type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
 
@@ -31,6 +31,7 @@ export function CSVMapperPage() {
     fileInputs: null,
     aiResult: null,
     finalMappings: [],
+    defaultValues: [],
     rowOffset: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -74,10 +75,11 @@ export function CSVMapperPage() {
     setCurrentStep('upload');
   };
 
-  const handleReviewComplete = (mappings: FieldMapping[], rowOffset: number) => {
+  const handleReviewComplete = (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[]) => {
     setWizardState(prev => ({ 
       ...prev, 
       finalMappings: mappings,
+      defaultValues: defaults,
       rowOffset,
     }));
     setCurrentStep('validation');

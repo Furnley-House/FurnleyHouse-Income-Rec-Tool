@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -27,16 +30,28 @@ import {
   HelpCircle,
   Eye,
   EyeOff,
-  Sparkles
+  Sparkles,
+  Link2,
+  Settings2
 } from 'lucide-react';
-import { FieldMapping, AIMappingResult, INTERNAL_FIELDS, FileUploadInputs, PaymentHeaderInputs } from '../../types';
+import { 
+  FieldMapping, 
+  AIMappingResult, 
+  INTERNAL_FIELDS, 
+  FileUploadInputs, 
+  PaymentHeaderInputs,
+  DefaultFieldValue,
+  INHERITABLE_FIELDS,
+  DEFAULTABLE_FIELDS
+} from '../../types';
 
 interface MappingReviewStepProps {
   fileInputs: FileUploadInputs;
   paymentHeader: PaymentHeaderInputs;
   aiResult: AIMappingResult;
+  initialDefaults?: DefaultFieldValue[];
   onBack: () => void;
-  onComplete: (mappings: FieldMapping[], rowOffset: number) => void;
+  onComplete: (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[]) => void;
 }
 
 const confidenceColors = {
@@ -51,9 +66,41 @@ const confidenceIcons = {
   low: AlertTriangle,
 };
 
-export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack, onComplete }: MappingReviewStepProps) {
+export function MappingReviewStep({ 
+  fileInputs, 
+  paymentHeader, 
+  aiResult, 
+  initialDefaults = [],
+  onBack, 
+  onComplete 
+}: MappingReviewStepProps) {
   const [mappings, setMappings] = useState<FieldMapping[]>(aiResult.mappings);
   const [rowOffset, setRowOffset] = useState(aiResult.suggestedRowOffset);
+  
+  // Initialize default values - auto-enable date inheritance
+  const [defaultValues, setDefaultValues] = useState<DefaultFieldValue[]>(() => {
+    if (initialDefaults.length > 0) return initialDefaults;
+    
+    // Check if payment_date is already mapped from CSV
+    const dateIsMapped = aiResult.mappings.some(m => m.targetField === 'payment_date' && !m.ignored);
+    
+    return [
+      // Auto-enable date inheritance if not mapped from CSV
+      {
+        targetField: 'payment_date',
+        source: 'header' as const,
+        headerField: 'paymentDate' as const,
+        enabled: !dateIsMapped,
+      },
+      // Initialize other defaultable fields as disabled
+      ...DEFAULTABLE_FIELDS.map(field => ({
+        targetField: field.value,
+        source: 'hardcoded' as const,
+        hardcodedValue: '',
+        enabled: false,
+      })),
+    ];
+  });
 
   const updateMapping = (csvColumn: string, targetField: string) => {
     setMappings(prev => prev.map(m => 
@@ -61,6 +108,13 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
         ? { ...m, targetField, ignored: targetField === '', confidence: 'high' as const }
         : m
     ));
+    
+    // If mapping a field that has a default, disable the default
+    if (targetField) {
+      setDefaultValues(prev => prev.map(d => 
+        d.targetField === targetField ? { ...d, enabled: false } : d
+      ));
+    }
   };
 
   const toggleIgnore = (csvColumn: string) => {
@@ -71,8 +125,33 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
     ));
   };
 
+  const toggleDefault = (targetField: string, enabled: boolean) => {
+    setDefaultValues(prev => prev.map(d => 
+      d.targetField === targetField ? { ...d, enabled } : d
+    ));
+    
+    // If enabling a default, remove any CSV mapping for that field
+    if (enabled) {
+      setMappings(prev => prev.map(m => 
+        m.targetField === targetField ? { ...m, targetField: '', ignored: true } : m
+      ));
+    }
+  };
+
+  const updateHardcodedValue = (targetField: string, value: string) => {
+    setDefaultValues(prev => prev.map(d => 
+      d.targetField === targetField ? { ...d, hardcodedValue: value } : d
+    ));
+  };
+
   const handleProceed = () => {
-    onComplete(mappings, rowOffset);
+    onComplete(mappings, rowOffset, defaultValues.filter(d => d.enabled));
+  };
+
+  // Get the display value for an inherited field
+  const getHeaderDisplayValue = (headerField: keyof PaymentHeaderInputs) => {
+    const value = paymentHeader[headerField];
+    return value?.toString() || '(not set)';
   };
 
   return (
@@ -118,6 +197,94 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
         </CardContent>
       </Card>
 
+      {/* Default/Inherited Values */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings2 className="h-4 w-4" />
+            Default Values
+          </CardTitle>
+          <CardDescription>
+            Set values that apply to all line items, either inherited from the payment header or hardcoded
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Inherited from Header */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium flex items-center gap-2">
+              <Link2 className="h-4 w-4" />
+              Inherit from Payment Header
+            </Label>
+            {INHERITABLE_FIELDS.map(field => {
+              const defaultVal = defaultValues.find(d => d.targetField === field.targetField);
+              const isMappedFromCSV = mappings.some(m => m.targetField === field.targetField && !m.ignored);
+              
+              return (
+                <div key={field.targetField} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Switch 
+                      checked={defaultVal?.enabled || false}
+                      onCheckedChange={(checked) => toggleDefault(field.targetField, checked)}
+                      disabled={isMappedFromCSV}
+                    />
+                    <div>
+                      <span className="font-medium">{field.label}</span>
+                      {isMappedFromCSV && (
+                        <span className="text-xs text-muted-foreground ml-2">(mapped from CSV)</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Value: </span>
+                    <span className="font-medium">{getHeaderDisplayValue(field.headerField)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Hardcoded Defaults */}
+          <div className="space-y-3 pt-2">
+            <Label className="text-sm font-medium">Hardcoded Defaults (Optional)</Label>
+            {DEFAULTABLE_FIELDS.map(field => {
+              const defaultVal = defaultValues.find(d => d.targetField === field.value);
+              const isMappedFromCSV = mappings.some(m => m.targetField === field.value && !m.ignored);
+              
+              return (
+                <div key={field.value} className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg">
+                  <Switch 
+                    checked={defaultVal?.enabled || false}
+                    onCheckedChange={(checked) => toggleDefault(field.value, checked)}
+                    disabled={isMappedFromCSV}
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium">{field.label}</span>
+                    {isMappedFromCSV && (
+                      <span className="text-xs text-muted-foreground ml-2">(mapped from CSV)</span>
+                    )}
+                  </div>
+                  {defaultVal?.enabled && (
+                    <Select 
+                      value={defaultVal?.hardcodedValue || ''} 
+                      onValueChange={(v) => updateHardcodedValue(field.value, v)}
+                    >
+                      <SelectTrigger className="w-[150px]">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover border shadow-lg z-50">
+                        {field.options.map(opt => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Row Offset Setting */}
       {aiResult.suggestedRowOffset > 0 && (
         <Card>
@@ -149,9 +316,9 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
       {/* Mapping Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Field Mappings</CardTitle>
+          <CardTitle>CSV Column Mappings</CardTitle>
           <CardDescription>
-            Review and adjust the AI-suggested mappings. Click on any mapping to change it.
+            Review and adjust the AI-suggested mappings. Fields with defaults above don't need CSV mapping.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -168,6 +335,8 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
               <tbody>
                 {mappings.map((mapping) => {
                   const ConfidenceIcon = confidenceIcons[mapping.confidence];
+                  const hasDefault = defaultValues.some(d => d.targetField === mapping.targetField && d.enabled);
+                  
                   return (
                     <tr 
                       key={mapping.csvColumn} 
@@ -206,12 +375,20 @@ export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack,
                             <SelectItem value="_ignore">
                               <span className="text-muted-foreground">— Skip this column —</span>
                             </SelectItem>
-                            {INTERNAL_FIELDS.map((field) => (
-                              <SelectItem key={field.value} value={field.value}>
-                                {field.label}
-                                {field.required && <span className="text-destructive ml-1">*</span>}
-                              </SelectItem>
-                            ))}
+                            {INTERNAL_FIELDS.map((field) => {
+                              const fieldHasDefault = defaultValues.some(d => d.targetField === field.value && d.enabled);
+                              return (
+                                <SelectItem 
+                                  key={field.value} 
+                                  value={field.value}
+                                  disabled={fieldHasDefault}
+                                >
+                                  {field.label}
+                                  {field.required && <span className="text-destructive ml-1">*</span>}
+                                  {fieldHasDefault && <span className="text-muted-foreground ml-1">(has default)</span>}
+                                </SelectItem>
+                              );
+                            })}
                           </SelectContent>
                         </Select>
                       </td>
