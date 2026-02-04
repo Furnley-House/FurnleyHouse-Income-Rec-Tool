@@ -6,10 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { ArrowRight, ArrowLeft, FileSpreadsheet, Building2, Calendar, Hash } from 'lucide-react';
 import { CSVUpload } from '../CSVUpload';
 import { CSVParseResult, FileUploadInputs, PaymentHeaderInputs } from '../../types';
@@ -144,14 +147,33 @@ export function FileUploadStep({ paymentHeader, onComplete, onBack }: FileUpload
                   <Label htmlFor="dateColumn">Line Item Date Column *</Label>
                   <Select value={paymentDateColumn} onValueChange={setPaymentDateColumn}>
                     <SelectTrigger id="dateColumn">
-                      <SelectValue placeholder="Select date column" />
+                      <SelectValue placeholder="Select date source" />
                     </SelectTrigger>
                     <SelectContent className="bg-popover border shadow-lg z-50">
-                      {csvData.headers.map((header) => (
-                        <SelectItem key={header} value={header}>
-                          {header}
+                      {/* Header Inheritance Option */}
+                      <SelectGroup>
+                        <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5">
+                          From Payment Header
+                        </SelectLabel>
+                        <SelectItem value="__INHERIT_HEADER_DATE__">
+                          <span className="flex items-center gap-2">
+                            <Calendar className="h-3 w-3 text-primary" />
+                            Use header date: {paymentHeader.paymentDate}
+                          </span>
                         </SelectItem>
-                      ))}
+                      </SelectGroup>
+                      
+                      {/* CSV Column Options */}
+                      <SelectGroup>
+                        <SelectLabel className="text-xs font-semibold text-muted-foreground px-2 py-1.5 border-t mt-1 pt-2">
+                          From CSV Column
+                        </SelectLabel>
+                        {csvData.headers.map((header) => (
+                          <SelectItem key={header} value={header}>
+                            {header}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
