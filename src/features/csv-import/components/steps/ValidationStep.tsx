@@ -13,12 +13,16 @@ import {
   AlertCircle, 
   Upload, 
   FileSpreadsheet,
-  ArrowRight
+  ArrowRight,
+  Building2,
+  Calendar,
+  Hash
 } from 'lucide-react';
-import { FieldMapping, FileUploadInputs, INTERNAL_FIELDS } from '../../types';
+import { FieldMapping, FileUploadInputs, PaymentHeaderInputs, INTERNAL_FIELDS } from '../../types';
 
 interface ValidationStepProps {
   fileInputs: FileUploadInputs;
+  paymentHeader: PaymentHeaderInputs;
   mappings: FieldMapping[];
   rowOffset: number;
   onBack: () => void;
@@ -28,6 +32,7 @@ interface ValidationStepProps {
 
 export function ValidationStep({ 
   fileInputs, 
+  paymentHeader,
   mappings, 
   rowOffset, 
   onBack, 
@@ -115,15 +120,52 @@ export function ValidationStep({
         </Alert>
       )}
 
+      {/* Payment Header Summary */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            Bank Payment Header
+          </CardTitle>
+          <CardDescription>
+            This record will be created in Zoho first
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Provider:</span>
+              <span className="text-sm font-medium">{paymentHeader.providerName}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Date:</span>
+              <span className="text-sm font-medium">{paymentHeader.paymentDate}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Hash className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Reference:</span>
+              <span className="text-sm font-medium">{paymentHeader.paymentReference}</span>
+            </div>
+            {paymentHeader.paymentAmount && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Amount:</span>
+                <span className="text-sm font-medium">£{paymentHeader.paymentAmount.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Import Summary */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
-            Import Summary
+            Line Items Summary
           </CardTitle>
           <CardDescription>
-            Review the details of your import before proceeding
+            These records will be attached to the payment header
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -132,10 +174,6 @@ export function ValidationStep({
             <div className="bg-muted/50 rounded-lg p-4">
               <div className="text-sm text-muted-foreground mb-1">Source File</div>
               <div className="font-medium">{fileInputs.csvData.fileName}</div>
-            </div>
-            <div className="bg-muted/50 rounded-lg p-4">
-              <div className="text-sm text-muted-foreground mb-1">Provider</div>
-              <div className="font-medium">{fileInputs.providerName}</div>
             </div>
             <div className="bg-muted/50 rounded-lg p-4">
               <div className="text-sm text-muted-foreground mb-1">Rows to Import</div>
@@ -150,6 +188,12 @@ export function ValidationStep({
                 )}
               </div>
             </div>
+            {rowOffset > 0 && (
+              <div className="bg-muted/50 rounded-lg p-4">
+                <div className="text-sm text-muted-foreground mb-1">Row Offset</div>
+                <div className="font-medium">Starting from row {rowOffset + 1}</div>
+              </div>
+            )}
           </div>
 
           {/* Mapping Summary */}

@@ -29,10 +29,11 @@ import {
   EyeOff,
   Sparkles
 } from 'lucide-react';
-import { FieldMapping, AIMappingResult, INTERNAL_FIELDS, FileUploadInputs } from '../../types';
+import { FieldMapping, AIMappingResult, INTERNAL_FIELDS, FileUploadInputs, PaymentHeaderInputs } from '../../types';
 
 interface MappingReviewStepProps {
   fileInputs: FileUploadInputs;
+  paymentHeader: PaymentHeaderInputs;
   aiResult: AIMappingResult;
   onBack: () => void;
   onComplete: (mappings: FieldMapping[], rowOffset: number) => void;
@@ -50,7 +51,7 @@ const confidenceIcons = {
   low: AlertTriangle,
 };
 
-export function MappingReviewStep({ fileInputs, aiResult, onBack, onComplete }: MappingReviewStepProps) {
+export function MappingReviewStep({ fileInputs, paymentHeader, aiResult, onBack, onComplete }: MappingReviewStepProps) {
   const [mappings, setMappings] = useState<FieldMapping[]>(aiResult.mappings);
   const [rowOffset, setRowOffset] = useState(aiResult.suggestedRowOffset);
 
@@ -106,8 +107,11 @@ export function MappingReviewStep({ fileInputs, aiResult, onBack, onComplete }: 
                   {aiResult.overallConfidence} confidence
                 </Badge>
               </div>
+              <p className="text-sm text-muted-foreground">
+                Mapping for <strong>{paymentHeader.providerName}</strong> • {fileInputs.csvData.totalRows} line items
+              </p>
               {aiResult.analysisNotes && (
-                <p className="text-sm text-muted-foreground">{aiResult.analysisNotes}</p>
+                <p className="text-sm text-muted-foreground mt-1">{aiResult.analysisNotes}</p>
               )}
             </div>
           </div>
@@ -129,7 +133,7 @@ export function MappingReviewStep({ fileInputs, aiResult, onBack, onComplete }: 
                 <SelectTrigger className="w-24">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-popover border shadow-lg z-50">
                   {[0, 1, 2, 3, 4, 5].map((n) => (
                     <SelectItem key={n} value={String(n)}>
                       Row {n + 1}
@@ -198,7 +202,7 @@ export function MappingReviewStep({ fileInputs, aiResult, onBack, onComplete }: 
                           <SelectTrigger className="w-[200px]">
                             <SelectValue placeholder="Select field..." />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-popover border shadow-lg z-50">
                             <SelectItem value="_ignore">
                               <span className="text-muted-foreground">— Skip this column —</span>
                             </SelectItem>
