@@ -20,7 +20,42 @@ export interface FieldMapping {
   ignored: boolean;
 }
 
-// Fields that can inherit from payment header or have hardcoded defaults
+// Universal field mapping - each target field can be sourced from CSV, header, or hardcoded
+export type FieldSource = 'csv' | 'header' | 'hardcoded';
+
+export interface FieldMappingConfig {
+  targetField: string;
+  source: FieldSource;
+  csvColumn?: string;        // Used when source = 'csv'
+  headerField?: keyof PaymentHeaderInputs;  // Used when source = 'header'
+  hardcodedValue?: string;   // Used when source = 'hardcoded'
+}
+
+// Which header fields can be used as sources for each target field
+export const HEADER_FIELD_OPTIONS: { value: keyof PaymentHeaderInputs; label: string; type: 'date' | 'text' | 'number' }[] = [
+  { value: 'paymentDate', label: 'Payment Date', type: 'date' },
+  { value: 'paymentReference', label: 'Payment Reference', type: 'text' },
+  { value: 'providerName', label: 'Provider Name', type: 'text' },
+  { value: 'paymentAmount', label: 'Payment Amount', type: 'number' },
+  { value: 'notes', label: 'Notes', type: 'text' },
+];
+
+// Validation rules for each field type
+export const FIELD_VALIDATION: Record<string, { type: 'date' | 'number' | 'text' | 'enum'; options?: string[]; format?: string }> = {
+  payment_date: { type: 'date', format: 'YYYY-MM-DD' },
+  amount: { type: 'number' },
+  payment_reference: { type: 'text' },
+  client_name: { type: 'text' },
+  policy_reference: { type: 'text' },
+  description: { type: 'text' },
+  transaction_type: { type: 'enum', options: ['credit', 'debit', 'fee', 'commission'] },
+  balance: { type: 'number' },
+  fee_category: { type: 'enum', options: ['initial', 'ongoing', 'ad-hoc'] },
+  adviser_name: { type: 'text' },
+  agency_code: { type: 'text' },
+};
+
+// Legacy type for backwards compatibility during refactor
 export interface DefaultFieldValue {
   targetField: string;
   source: 'header' | 'hardcoded';
@@ -29,12 +64,11 @@ export interface DefaultFieldValue {
   enabled: boolean;
 }
 
-// Predefined inheritable fields from payment header
+// Legacy constants - kept for backwards compatibility
 export const INHERITABLE_FIELDS: { targetField: string; headerField: keyof PaymentHeaderInputs; label: string }[] = [
   { targetField: 'payment_date', headerField: 'paymentDate', label: 'Payment Date' },
 ];
 
-// Fields that can have hardcoded default values
 export const DEFAULTABLE_FIELDS = [
   { value: 'fee_category', label: 'Fee Category', options: ['initial', 'ongoing', 'ad-hoc'] },
   { value: 'transaction_type', label: 'Transaction Type', options: ['credit', 'debit', 'fee', 'commission'] },
