@@ -1,36 +1,106 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, Database, Table2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { CSVUpload } from './CSVUpload';
-import { CSVParseResult } from '../types';
+import { toast } from 'sonner';
+import { FileUploadStep } from './steps/FileUploadStep';
+import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
+import { MappingReviewStep } from './steps/MappingReviewStep';
+import { ValidationStep } from './steps/ValidationStep';
+import { WizardState, FileUploadInputs, AIMappingResult, FieldMapping } from '../types';
 
-type ImportStep = 'upload' | 'preview' | 'mapping' | 'confirm';
+type WizardStep = 'upload' | 'analyzing' | 'review' | 'validation';
+
+const STEP_LABELS: Record<WizardStep, string> = {
+  upload: 'Upload',
+  analyzing: 'Analyzing',
+  review: 'Review',
+  validation: 'Confirm',
+};
+
+const STEP_ORDER: WizardStep[] = ['upload', 'analyzing', 'review', 'validation'];
 
 export function CSVMapperPage() {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
-  const [csvData, setCsvData] = useState<CSVParseResult | null>(null);
-
-  const handleFileLoaded = (result: CSVParseResult) => {
-    setCsvData(result);
-    setCurrentStep('preview');
-  };
+  const [currentStep, setCurrentStep] = useState<WizardStep>('upload');
+  const [wizardState, setWizardState] = useState<WizardState>({
+    step: 'upload',
+    fileInputs: null,
+    aiResult: null,
+    finalMappings: [],
+    rowOffset: 0,
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleBack = () => {
     if (currentStep === 'upload') {
       navigate('/');
-    } else if (currentStep === 'preview') {
+    } else if (currentStep === 'analyzing') {
       setCurrentStep('upload');
-      setCsvData(null);
+    } else if (currentStep === 'review') {
+      setCurrentStep('upload');
+    } else if (currentStep === 'validation') {
+      setCurrentStep('review');
     }
   };
+
+  const handleFileUploadComplete = (inputs: FileUploadInputs) => {
+    setWizardState(prev => ({ ...prev, fileInputs: inputs }));
+    setCurrentStep('analyzing');
+  };
+
+  const handleAnalysisComplete = (result: AIMappingResult) => {
+    setWizardState(prev => ({ 
+      ...prev, 
+      aiResult: result,
+      finalMappings: result.mappings,
+      rowOffset: result.suggestedRowOffset,
+    }));
+    setCurrentStep('review');
+  };
+
+  const handleAnalysisError = () => {
+    // Go back to upload on error
+    setCurrentStep('upload');
+  };
+
+  const handleReviewComplete = (mappings: FieldMapping[], rowOffset: number) => {
+    setWizardState(prev => ({ 
+      ...prev, 
+      finalMappings: mappings,
+      rowOffset,
+    }));
+    setCurrentStep('validation');
+  };
+
+  const handleConfirmImport = async () => {
+    setIsSubmitting(true);
+    try {
+      // TODO: Implement actual import to Zoho
+      // For now, simulate a delay and show success
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      toast.success('Import completed successfully!', {
+        description: `Imported ${wizardState.fileInputs?.csvData.totalRows} rows from ${wizardState.fileInputs?.providerName}`,
+      });
+      
+      // Navigate back to home or to reconciliation
+      navigate('/');
+    } catch (error) {
+      toast.error('Import failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const currentStepIndex = STEP_ORDER.indexOf(currentStep);
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b bg-card">
+      <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -40,32 +110,39 @@ export function CSVMapperPage() {
               <div>
                 <h1 className="text-xl font-semibold">CSV Import Wizard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Import bank payment data from CSV files
+                  AI-powered bank statement mapping
                 </p>
               </div>
             </div>
             
             {/* Step Indicator */}
-            <div className="flex items-center gap-2">
-              {(['upload', 'preview', 'mapping', 'confirm'] as ImportStep[]).map((step, index) => (
+            <div className="hidden md:flex items-center gap-1">
+              {STEP_ORDER.map((step, index) => (
                 <div key={step} className="flex items-center">
-                  <div 
-                    className={`
-                      w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                      ${currentStep === step 
-                        ? 'bg-primary text-primary-foreground' 
-                        : index < ['upload', 'preview', 'mapping', 'confirm'].indexOf(currentStep)
-                          ? 'bg-primary/20 text-primary'
-                          : 'bg-muted text-muted-foreground'
-                      }
-                    `}
-                  >
-                    {index + 1}
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className={`
+                        w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
+                        ${currentStep === step 
+                          ? 'bg-primary text-primary-foreground' 
+                          : index < currentStepIndex
+                            ? 'bg-primary/20 text-primary'
+                            : 'bg-muted text-muted-foreground'
+                        }
+                      `}
+                    >
+                      {index + 1}
+                    </div>
+                    <span className={`text-sm hidden lg:block ${
+                      currentStep === step ? 'text-foreground font-medium' : 'text-muted-foreground'
+                    }`}>
+                      {STEP_LABELS[step]}
+                    </span>
                   </div>
-                  {index < 3 && (
-                    <div className={`w-8 h-0.5 ${
-                      index < ['upload', 'preview', 'mapping', 'confirm'].indexOf(currentStep)
-                        ? 'bg-primary/20'
+                  {index < STEP_ORDER.length - 1 && (
+                    <div className={`w-8 lg:w-12 h-0.5 mx-2 ${
+                      index < currentStepIndex
+                        ? 'bg-primary/40'
                         : 'bg-muted'
                     }`} />
                   )}
@@ -79,121 +156,35 @@ export function CSVMapperPage() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         {currentStep === 'upload' && (
-          <div className="max-w-2xl mx-auto">
-            <CSVUpload onFileLoaded={handleFileLoaded} />
-            
-            <div className="mt-6 grid grid-cols-2 gap-4">
-              <Card className="p-4 bg-muted/50">
-                <div className="flex items-start gap-3">
-                  <Database className="h-5 w-5 text-primary mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-sm">Bank Payments</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Import payment headers with provider, amount, and date information
-                    </p>
-                  </div>
-                </div>
-              </Card>
-              <Card className="p-4 bg-muted/50">
-                <div className="flex items-start gap-3">
-                  <Table2 className="h-5 w-5 text-primary mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-sm">Line Items</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Import detailed line items with client and policy references
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </div>
+          <FileUploadStep onComplete={handleFileUploadComplete} />
         )}
 
-        {currentStep === 'preview' && csvData && (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Data Preview</span>
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {csvData.totalRows} rows • {csvData.headers.length} columns
-                  </span>
-                </CardTitle>
-                <CardDescription>
-                  Review the first few rows of your imported data
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        {csvData.headers.map((header, i) => (
-                          <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvData.rows.slice(0, 5).map((row, rowIndex) => (
-                        <tr key={rowIndex} className="border-b">
-                          {csvData.headers.map((header, colIndex) => (
-                            <td key={colIndex} className="px-3 py-2 text-foreground">
-                              {row[header] || '-'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {csvData.totalRows > 5 && (
-                  <p className="text-sm text-muted-foreground mt-4 text-center">
-                    Showing 5 of {csvData.totalRows} rows
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={handleBack}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Button>
-              <Button onClick={() => setCurrentStep('mapping')}>
-                Continue to Mapping
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </div>
-          </div>
+        {currentStep === 'analyzing' && wizardState.fileInputs && (
+          <MappingAnalysisStep 
+            fileInputs={wizardState.fileInputs}
+            onComplete={handleAnalysisComplete}
+            onError={handleAnalysisError}
+          />
         )}
 
-        {currentStep === 'mapping' && (
-          <Card className="max-w-4xl mx-auto">
-            <CardHeader>
-              <CardTitle>Field Mapping</CardTitle>
-              <CardDescription>
-                Map your CSV columns to the required Zoho fields
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground text-center py-12">
-                Field mapping interface coming soon...
-              </p>
-              <div className="flex justify-between mt-6">
-                <Button variant="outline" onClick={() => setCurrentStep('preview')}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-                <Button disabled>
-                  Continue
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        {currentStep === 'review' && wizardState.fileInputs && wizardState.aiResult && (
+          <MappingReviewStep
+            fileInputs={wizardState.fileInputs}
+            aiResult={wizardState.aiResult}
+            onBack={handleBack}
+            onComplete={handleReviewComplete}
+          />
+        )}
+
+        {currentStep === 'validation' && wizardState.fileInputs && (
+          <ValidationStep
+            fileInputs={wizardState.fileInputs}
+            mappings={wizardState.finalMappings}
+            rowOffset={wizardState.rowOffset}
+            onBack={handleBack}
+            onConfirm={handleConfirmImport}
+            isSubmitting={isSubmitting}
+          />
         )}
       </main>
     </div>

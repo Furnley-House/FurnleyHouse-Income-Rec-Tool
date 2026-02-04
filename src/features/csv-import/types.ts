@@ -15,7 +15,9 @@ export interface CSVParseResult {
 export interface FieldMapping {
   csvColumn: string;
   targetField: string;
-  transform?: 'none' | 'currency' | 'date' | 'uppercase' | 'lowercase';
+  confidence: 'high' | 'medium' | 'low';
+  sampleValues: string[];
+  ignored: boolean;
 }
 
 export interface ValidationError {
@@ -32,9 +34,60 @@ export interface CSVValidationResult {
 
 export type ImportTarget = 'bank_payments' | 'payment_line_items';
 
+// Internal target fields for bank payment imports
+export const INTERNAL_FIELDS = [
+  { value: 'payment_date', label: 'Payment Date', required: true },
+  { value: 'amount', label: 'Amount', required: true },
+  { value: 'payment_reference', label: 'Payment Reference', required: true },
+  { value: 'client_name', label: 'Client Name', required: false },
+  { value: 'policy_reference', label: 'Policy Reference', required: false },
+  { value: 'description', label: 'Description', required: false },
+  { value: 'transaction_type', label: 'Transaction Type', required: false },
+  { value: 'balance', label: 'Balance', required: false },
+  { value: 'fee_category', label: 'Fee Category', required: false },
+  { value: 'adviser_name', label: 'Adviser Name', required: false },
+  { value: 'agency_code', label: 'Agency Code', required: false },
+] as const;
+
+export type InternalFieldValue = typeof INTERNAL_FIELDS[number]['value'];
+
+// Step 1: User inputs from file upload
+export interface FileUploadInputs {
+  csvData: CSVParseResult;
+  paymentDateColumn: string;
+  paymentReferenceColumn: string;
+  providerName: string;
+}
+
+// AI mapping analysis response
+export interface AIStructuralIssue {
+  type: 'merged_headers' | 'split_headers' | 'unusual_format' | 'missing_headers' | 'row_offset';
+  description: string;
+  suggestedFix: string;
+  affectedColumns?: string[];
+}
+
+export interface AIMappingResult {
+  mappings: FieldMapping[];
+  structuralIssues: AIStructuralIssue[];
+  suggestedRowOffset: number;
+  overallConfidence: 'high' | 'medium' | 'low';
+  analysisNotes: string;
+}
+
+// Complete wizard state
+export interface WizardState {
+  step: 'upload' | 'analyzing' | 'review' | 'validation';
+  fileInputs: FileUploadInputs | null;
+  aiResult: AIMappingResult | null;
+  finalMappings: FieldMapping[];
+  rowOffset: number;
+}
+
 export interface ImportConfig {
   target: ImportTarget;
   mappings: FieldMapping[];
   skipHeaderRow: boolean;
   dateFormat: string;
+  rowOffset: number;
 }
