@@ -118,7 +118,7 @@ export function FieldMappingRow({
   };
 
   const handleCsvColumnChange = (column: string) => {
-    onChange({ ...config, csvColumn: column || undefined });
+    onChange({ ...config, csvColumn: column === '__none__' ? undefined : column });
   };
 
   const handleHeaderFieldChange = (field: keyof PaymentHeaderInputs) => {
@@ -191,14 +191,14 @@ export function FieldMappingRow({
         {config.source === 'csv' && (
           <div className="flex items-center gap-2">
             <Select 
-              value={config.csvColumn || ''} 
+              value={config.csvColumn || '__none__'} 
               onValueChange={handleCsvColumnChange}
             >
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Select column..." />
               </SelectTrigger>
               <SelectContent className="bg-popover border shadow-lg z-50 max-h-[300px]">
-                <SelectItem value="">
+                <SelectItem value="__none__">
                   <span className="text-muted-foreground">— Not mapped —</span>
                 </SelectItem>
                 {csvColumns.map((col) => (
