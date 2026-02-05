@@ -1,5 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import { useReconciliationStore } from "@/store/reconciliationStore";
 import { toast } from "sonner";
 
 interface MatchSyncData {
@@ -27,18 +26,11 @@ interface InvalidationSyncData {
  * Hook for syncing reconciliation data back to Zoho CRM
  */
 export function useZohoSync() {
-  const { dataSource } = useReconciliationStore();
-
   /**
    * Sync a confirmed match to Zoho CRM
    * Creates a Payment_Matches record and updates related records
    */
   const syncMatch = async (matchData: MatchSyncData): Promise<boolean> => {
-    if (dataSource !== 'zoho') {
-      console.log('[ZohoSync] Skipping sync - not using Zoho data source');
-      return true; // Not an error, just skip
-    }
-
     console.log('[ZohoSync] Syncing match to Zoho:', matchData);
 
     try {
@@ -128,11 +120,6 @@ export function useZohoSync() {
    * Sync multiple matches at once (batch operation)
    */
   const syncMatches = async (matches: MatchSyncData[]): Promise<{ success: number; failed: number }> => {
-    if (dataSource !== 'zoho') {
-      console.log('[ZohoSync] Skipping batch sync - not using Zoho data source');
-      return { success: matches.length, failed: 0 };
-    }
-
     let success = 0;
     let failed = 0;
 
@@ -166,10 +153,6 @@ export function useZohoSync() {
     remainingAmount: number,
     notes?: string
   ): Promise<boolean> => {
-    if (dataSource !== 'zoho') {
-      return true;
-    }
-
     console.log('[ZohoSync] Updating payment status:', { paymentZohoId, status });
 
     try {
@@ -216,11 +199,6 @@ export function useZohoSync() {
    * Sync expectation invalidation to Zoho CRM
    */
   const syncInvalidation = async (data: InvalidationSyncData): Promise<boolean> => {
-    if (dataSource !== 'zoho') {
-      console.log('[ZohoSync] Skipping invalidation sync - not using Zoho data source');
-      return true;
-    }
-
     console.log('[ZohoSync] Syncing invalidation to Zoho:', data);
 
     try {

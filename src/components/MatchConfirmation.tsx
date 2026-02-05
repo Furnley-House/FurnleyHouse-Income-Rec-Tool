@@ -35,8 +35,7 @@ export function MatchConfirmation() {
     getSelectedPayment,
     clearPendingMatches,
     confirmPendingMatches,
-    tolerance,
-    dataSource
+    tolerance
   } = useReconciliationStore();
   
   const { syncMatches, syncPaymentStatus } = useZohoSync();
@@ -106,56 +105,52 @@ export function MatchConfirmation() {
       // First, confirm matches locally
       confirmPendingMatches(notes);
       
-      // If using Zoho, sync to CRM
-      if (dataSource === 'zoho') {
-        // Build sync data for each pending match
-        const matchSyncData = pendingMatches.map(pm => {
-          const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
-          const expectation = expectations.find(e => e.id === pm.expectationId);
-          
-          // Determine match quality based on variance
-          let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
-          const absVariance = Math.abs(pm.variancePercentage);
-          if (absVariance < 0.1) matchQuality = 'perfect';
-          else if (absVariance <= 2) matchQuality = 'good';
-          else if (absVariance <= tolerance) matchQuality = 'acceptable';
-          
-          return {
-            paymentId: payment.id,
-            paymentZohoId: payment.zohoId || payment.id,
-            lineItemId: pm.lineItemId,
-            lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
-            expectationId: pm.expectationId,
-            expectationZohoId: expectation?.zohoId || pm.expectationId,
-            matchedAmount: pm.lineItemAmount,
-            variance: pm.variance,
-            variancePercentage: pm.variancePercentage,
-            matchType: 'full' as const,
-            matchMethod: 'manual' as const,
-            matchQuality,
-            notes: notes,
-          };
-        });
+      // Sync matches to Zoho
+      const matchSyncData = pendingMatches.map(pm => {
+        const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
+        const expectation = expectations.find(e => e.id === pm.expectationId);
         
-        // Sync matches to Zoho
-        await syncMatches(matchSyncData);
+        // Determine match quality based on variance
+        let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+        const absVariance = Math.abs(pm.variancePercentage);
+        if (absVariance < 0.1) matchQuality = 'perfect';
+        else if (absVariance <= 2) matchQuality = 'good';
+        else if (absVariance <= tolerance) matchQuality = 'acceptable';
         
-        // Update payment status in Zoho
-        const newReconciledAmount = payment.reconciledAmount + summary.totalLineItemAmount;
-        const newRemainingAmount = payment.amount - newReconciledAmount;
-        const allMatched = payment.lineItems.every(li => 
-          li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
-        );
-        const newStatus = allMatched ? 'reconciled' : 'in_progress';
-        
-        await syncPaymentStatus(
-          payment.zohoId || payment.id,
-          newStatus,
-          newReconciledAmount,
-          newRemainingAmount,
-          notes
-        );
-      }
+        return {
+          paymentId: payment.id,
+          paymentZohoId: payment.zohoId || payment.id,
+          lineItemId: pm.lineItemId,
+          lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
+          expectationId: pm.expectationId,
+          expectationZohoId: expectation?.zohoId || pm.expectationId,
+          matchedAmount: pm.lineItemAmount,
+          variance: pm.variance,
+          variancePercentage: pm.variancePercentage,
+          matchType: 'full' as const,
+          matchMethod: 'manual' as const,
+          matchQuality,
+          notes: notes,
+        };
+      });
+      
+      await syncMatches(matchSyncData);
+      
+      // Update payment status in Zoho
+      const newReconciledAmount = payment.reconciledAmount + summary.totalLineItemAmount;
+      const newRemainingAmount = payment.amount - newReconciledAmount;
+      const allMatched = payment.lineItems.every(li => 
+        li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
+      );
+      const newStatus = allMatched ? 'reconciled' : 'in_progress';
+      
+      await syncPaymentStatus(
+        payment.zohoId || payment.id,
+        newStatus,
+        newReconciledAmount,
+        newRemainingAmount,
+        notes
+      );
     } finally {
       setIsSyncing(false);
     }

@@ -3,19 +3,14 @@ import { useZohoData } from '@/hooks/useZohoData';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { 
   Sparkles, 
-  CheckCircle2, 
   Calendar,
-  TrendingUp,
   Wallet,
-  FileCheck,
   Settings,
-  Database,
   Cloud,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import {
   Popover,
@@ -32,10 +27,10 @@ export function SessionHeader() {
     setTolerance,
     selectedPaymentId,
     autoMatchCurrentPayment,
-    dataSource,
     isLoadingData,
-    setDataSource,
-    setLoadingState
+    setZohoData,
+    setLoadingState,
+    payments
   } = useReconciliationStore();
   
   const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
@@ -53,25 +48,21 @@ export function SessionHeader() {
     ? (statistics.reconciledPayments / statistics.totalPayments) * 100 
     : 0;
   
-  const handleDataSourceToggle = async (useZoho: boolean) => {
-    if (useZoho) {
-      setLoadingState(true);
-      toast.info('Loading data from Zoho CRM...');
-      const data = await loadZohoData();
-      if (data) {
-        setDataSource('zoho', data.payments, data.expectations);
-        toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
-      } else {
-        setLoadingState(false, 'Failed to load Zoho data');
-        toast.error('Failed to load data from Zoho CRM');
-      }
+  const handleRefreshData = async () => {
+    setLoadingState(true);
+    toast.info('Loading data from Zoho CRM...');
+    const data = await loadZohoData();
+    if (data) {
+      setZohoData(data.payments, data.expectations);
+      toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
     } else {
-      setDataSource('mock');
-      toast.info('Switched to mock data');
+      setLoadingState(false, 'Failed to load Zoho data');
+      toast.error('Failed to load data from Zoho CRM');
     }
   };
   
   const isLoading = isLoadingData || isZohoLoading;
+  const hasData = payments.length > 0;
   
   return (
     <header className="h-auto min-h-[100px] bg-card border-b border-border px-6 py-4">
@@ -118,26 +109,22 @@ export function SessionHeader() {
         
         {/* Right: Progress and Actions */}
         <div className="flex items-center gap-4">
-          {/* Data Source Toggle */}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-muted/30">
-            <div className="flex items-center gap-1.5">
-              <Database className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Mock</span>
-            </div>
-            <Switch
-              checked={dataSource === 'zoho'}
-              onCheckedChange={handleDataSourceToggle}
-              disabled={isLoading}
-            />
-            <div className="flex items-center gap-1.5">
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 text-primary animate-spin" />
-              ) : (
-                <Cloud className="h-4 w-4 text-primary" />
-              )}
-              <span className="text-xs font-medium text-primary">Zoho</span>
-            </div>
-          </div>
+          {/* Zoho Data Status & Refresh */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshData}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            <Cloud className="h-4 w-4 text-primary" />
+            {hasData ? 'Refresh' : 'Load Data'}
+          </Button>
           
           {/* Overall Progress */}
           <div className="w-48">
