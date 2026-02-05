@@ -1,12 +1,7 @@
 import { create } from 'zustand';
 import { Payment, PaymentLineItem, Expectation, Match, PendingMatch, ReconciliationStatistics, PaymentFilters, ExpectationFilters } from '@/types/reconciliation';
-import { mockPayments, mockExpectations, mockMatches } from '@/data/mockData';
-
-export type DataSource = 'mock' | 'zoho';
 
 interface ReconciliationStore {
-  // Data source
-  dataSource: DataSource;
   isLoadingData: boolean;
   dataError: string | null;
   
@@ -44,7 +39,7 @@ interface ReconciliationStore {
   setPaymentFilters: (filters: Partial<PaymentFilters>) => void;
   setExpectationFilters: (filters: Partial<ExpectationFilters>) => void;
   importData: (payments: Payment[], expectations: Expectation[]) => void;
-  setDataSource: (source: DataSource, payments?: Payment[], expectations?: Expectation[]) => void;
+  setZohoData: (payments: Payment[], expectations: Expectation[]) => void;
   setLoadingState: (isLoading: boolean, error?: string | null) => void;
   
   // Derived getters
@@ -105,15 +100,13 @@ const calculateStatistics = (payments: Payment[], expectations: Expectation[], m
 };
 
 export const useReconciliationStore = create<ReconciliationStore>((set, get) => ({
-  // Data source state
-  dataSource: 'mock' as DataSource,
   isLoadingData: false,
   dataError: null,
   
-  // Initialize with mock data
-  payments: mockPayments,
-  expectations: mockExpectations,
-  matches: mockMatches,
+  // Initialize empty - will be populated from Zoho
+  payments: [],
+  expectations: [],
+  matches: [],
   
   selectedPaymentId: null,
   pendingMatches: [],
@@ -133,7 +126,7 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   tolerance: 5, // 5% default tolerance
   autoAdvanceToNext: true,
   
-  statistics: calculateStatistics(mockPayments, mockExpectations, mockMatches),
+  statistics: calculateStatistics([], [], []),
   
   selectPayment: (paymentId) => {
     set({ selectedPaymentId: paymentId, pendingMatches: [] });
@@ -473,32 +466,17 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     });
   },
   
-  setDataSource: (source, payments, expectations) => {
-    if (source === 'mock') {
-      set({
-        dataSource: 'mock',
-        payments: mockPayments,
-        expectations: mockExpectations,
-        matches: mockMatches,
-        selectedPaymentId: null,
-        pendingMatches: [],
-        isLoadingData: false,
-        dataError: null,
-        statistics: calculateStatistics(mockPayments, mockExpectations, mockMatches)
-      });
-    } else if (payments && expectations) {
-      set({
-        dataSource: 'zoho',
-        payments,
-        expectations,
-        matches: [],
-        selectedPaymentId: null,
-        pendingMatches: [],
-        isLoadingData: false,
-        dataError: null,
-        statistics: calculateStatistics(payments, expectations, [])
-      });
-    }
+  setZohoData: (payments, expectations) => {
+    set({
+      payments,
+      expectations,
+      matches: [],
+      selectedPaymentId: null,
+      pendingMatches: [],
+      isLoadingData: false,
+      dataError: null,
+      statistics: calculateStatistics(payments, expectations, [])
+    });
   },
   
   setLoadingState: (isLoading, error = null) => {

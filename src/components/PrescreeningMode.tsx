@@ -36,7 +36,6 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     confirmPendingMatches,
     tolerance,
     setTolerance,
-    dataSource,
     expectations: allExpectationsFromStore
   } = useReconciliationStore();
   
@@ -272,57 +271,53 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       const notes = `Prescreening batch - matched at tolerance levels: ${passResults.map(p => `${p.tolerance}%`).join(', ')}`;
       confirmPendingMatches(notes);
       
-      // If using Zoho, sync to CRM
-      if (dataSource === 'zoho') {
-        // Build sync data for each pending match
-        const matchSyncData = pendingMatches.map(pm => {
-          const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
-          const expectation = allExpectationsFromStore.find(e => e.id === pm.expectationId);
-          
-          // Determine match quality based on variance
-          let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
-          const absVariance = Math.abs(pm.variancePercentage);
-          if (absVariance < 0.1) matchQuality = 'perfect';
-          else if (absVariance <= 2) matchQuality = 'good';
-          else if (absVariance <= tolerance) matchQuality = 'acceptable';
-          
-          return {
-            paymentId: payment.id,
-            paymentZohoId: payment.zohoId || payment.id,
-            lineItemId: pm.lineItemId,
-            lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
-            expectationId: pm.expectationId,
-            expectationZohoId: expectation?.zohoId || pm.expectationId,
-            matchedAmount: pm.lineItemAmount,
-            variance: pm.variance,
-            variancePercentage: pm.variancePercentage,
-            matchType: 'full' as const,
-            matchMethod: 'auto' as const, // Prescreening is auto-matching
-            matchQuality,
-            notes,
-          };
-        });
+      // Sync matches to Zoho
+      const matchSyncData = pendingMatches.map(pm => {
+        const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
+        const expectation = allExpectationsFromStore.find(e => e.id === pm.expectationId);
         
-        // Sync matches to Zoho
-        await syncMatches(matchSyncData);
+        // Determine match quality based on variance
+        let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
+        const absVariance = Math.abs(pm.variancePercentage);
+        if (absVariance < 0.1) matchQuality = 'perfect';
+        else if (absVariance <= 2) matchQuality = 'good';
+        else if (absVariance <= tolerance) matchQuality = 'acceptable';
         
-        // Calculate new payment status
-        const totalMatchedAmount = pendingMatches.reduce((sum, pm) => sum + pm.lineItemAmount, 0);
-        const newReconciledAmount = payment.reconciledAmount + totalMatchedAmount;
-        const newRemainingAmount = payment.amount - newReconciledAmount;
-        const allMatched = payment.lineItems.every(li => 
-          li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
-        );
-        const newStatus = allMatched ? 'reconciled' : 'in_progress';
-        
-        await syncPaymentStatus(
-          payment.zohoId || payment.id,
-          newStatus,
-          newReconciledAmount,
-          newRemainingAmount,
-          notes
-        );
-      }
+        return {
+          paymentId: payment.id,
+          paymentZohoId: payment.zohoId || payment.id,
+          lineItemId: pm.lineItemId,
+          lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
+          expectationId: pm.expectationId,
+          expectationZohoId: expectation?.zohoId || pm.expectationId,
+          matchedAmount: pm.lineItemAmount,
+          variance: pm.variance,
+          variancePercentage: pm.variancePercentage,
+          matchType: 'full' as const,
+          matchMethod: 'auto' as const, // Prescreening is auto-matching
+          matchQuality,
+          notes,
+        };
+      });
+      
+      await syncMatches(matchSyncData);
+      
+      // Calculate new payment status
+      const totalMatchedAmount = pendingMatches.reduce((sum, pm) => sum + pm.lineItemAmount, 0);
+      const newReconciledAmount = payment.reconciledAmount + totalMatchedAmount;
+      const newRemainingAmount = payment.amount - newReconciledAmount;
+      const allMatched = payment.lineItems.every(li => 
+        li.status === 'matched' || pendingMatches.some(pm => pm.lineItemId === li.id)
+      );
+      const newStatus = allMatched ? 'reconciled' : 'in_progress';
+      
+      await syncPaymentStatus(
+        payment.zohoId || payment.id,
+        newStatus,
+        newReconciledAmount,
+        newRemainingAmount,
+        notes
+      );
       
       setPassResults([]);
     } finally {

@@ -63,7 +63,6 @@ export function ExpectationGrid() {
     addPendingMatch,
     invalidateExpectation,
     tolerance,
-    dataSource,
     expectations: allExpectationsFromStore
   } = useReconciliationStore();
   
@@ -149,13 +148,12 @@ export function ExpectationGrid() {
         invalidateExpectation(selectedExpForInvalidate, invalidationReason.trim());
         
         // If using Zoho, sync to CRM
-        if (dataSource === 'zoho') {
-          const expectation = allExpectationsFromStore.find(e => e.id === selectedExpForInvalidate);
-          await syncInvalidation({
-            expectationZohoId: expectation?.zohoId || selectedExpForInvalidate,
-            reason: invalidationReason.trim(),
-          });
-        }
+        // Sync invalidation to Zoho
+        const expectation = allExpectationsFromStore.find(e => e.id === selectedExpForInvalidate);
+        await syncInvalidation({
+          expectationZohoId: expectation?.zohoId || selectedExpForInvalidate,
+          reason: invalidationReason.trim(),
+        });
       } finally {
         setIsInvalidating(false);
       }
