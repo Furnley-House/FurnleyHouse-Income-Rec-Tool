@@ -201,7 +201,7 @@ export function FieldMappingRow({
                 <SelectItem value="__none__">
                   <span className="text-muted-foreground">— Not mapped —</span>
                 </SelectItem>
-                {csvColumns.map((col) => (
+                {csvColumns.filter(col => col.header && col.header.trim() !== '').map((col) => (
                   <SelectItem key={col.header} value={col.header}>
                     <Tooltip>
                       <TooltipTrigger asChild>
