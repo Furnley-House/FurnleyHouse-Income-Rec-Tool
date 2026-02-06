@@ -494,7 +494,14 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     
     if (!payment) return [];
     
+    // Debug: Log provider matching info
+    const paymentProvider = payment.providerName;
+    const uniqueExpProviders = [...new Set(expectations.map(e => e.providerName))];
+    console.log(`[getRelevantExpectations] Payment provider: "${paymentProvider}"`);
+    console.log(`[getRelevantExpectations] Unique expectation providers (${uniqueExpProviders.length}):`, uniqueExpProviders.slice(0, 20));
+    
     let filtered = expectations.filter(e => e.providerName === payment.providerName);
+    console.log(`[getRelevantExpectations] Exact provider match: ${filtered.length} expectations`);
     
     // Apply month-based filtering based on payment date
     if (expectationFilters.monthRange !== 'all' && payment.paymentDate) {
