@@ -142,9 +142,8 @@ export function useZohoData(): UseZohoDataReturn {
       const lineItemsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getPaymentLineItems' } 
       });
-      if (lineItemsRes.error) throw new Error(`Line Items: ${lineItemsRes.error.message}`);
-      if (!lineItemsRes.data?.success) throw new Error(`Line Items: ${lineItemsRes.data?.error || 'Unknown error'}`);
-      const zohoLineItems: ZohoLineItem[] = lineItemsRes.data?.data || [];
+      const zohoLineItems: ZohoLineItem[] = checkRateLimit(lineItemsRes, 'Line Items');
+      console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       
       await delay(500);
