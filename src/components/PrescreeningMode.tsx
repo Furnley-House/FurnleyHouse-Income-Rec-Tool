@@ -450,7 +450,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
                 className="w-full gap-2"
               >
                 <Play className="h-4 w-4" />
-                Run {toleranceSteps[currentToleranceStep] === 0 ? 'Exact' : `${toleranceSteps[currentToleranceStep]}%`} Pass
+                Run {toleranceSteps[currentToleranceStep] === 0 ? 'Exact' : toleranceSteps[currentToleranceStep] === Infinity ? 'Any' : `${toleranceSteps[currentToleranceStep]}%`} Pass
               </Button>
             )}
             
