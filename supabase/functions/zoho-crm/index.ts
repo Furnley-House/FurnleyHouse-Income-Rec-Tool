@@ -324,66 +324,95 @@ async function fetchAllRecords(
   return allRecords;
 }
 
-// Use COQL for complex queries with filters
+// Use COQL for complex queries with filters - now with pagination support
 async function queryWithCOQL(
   accessToken: string,
-  query: string
+  query: string,
+  maxIterations: number = 100  // Safety limit
 ): Promise<ZohoRecord[]> {
   const apiDomain = "https://www.zohoapis.eu";
-  const url = `${apiDomain}/crm/v6/coql`;
-  
-  console.log("Executing COQL query:", query);
+  const allRecords: ZohoRecord[] = [];
+  let offset = 0;
+  const limit = 200; // COQL max per page
+  let iteration = 0;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Zoho-oauthtoken ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ select_query: query }),
-  });
+  console.log("Executing COQL query with pagination:", query);
 
-  if (response.status === 429) {
-    throw new ZohoRateLimitError("Zoho API rate limited", 60);
-  }
+  while (iteration < maxIterations) {
+    // COQL uses LIMIT and OFFSET for pagination
+    const paginatedQuery = `${query} limit ${limit} offset ${offset}`;
+    const url = `${apiDomain}/crm/v6/coql`;
 
-  // Zoho sometimes returns 204 No Content for empty COQL results
-  if (response.status === 204) {
-    console.log("COQL query returned 204 (no content)");
-    return [];
-  }
+    console.log(`COQL iteration ${iteration + 1}: offset ${offset}`);
 
-  const raw = await response.text();
-  if (!raw) {
-    console.error("COQL empty response", {
-      status: response.status,
-      statusText: response.statusText,
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ select_query: paginatedQuery }),
     });
-    throw new Error(`COQL error: empty response (HTTP ${response.status})`);
-  }
 
-  let data: ZohoListResponse;
-  try {
-    data = JSON.parse(raw) as ZohoListResponse;
-  } catch {
-    console.error("COQL non-JSON response", {
-      status: response.status,
-      statusText: response.statusText,
-      bodyPreview: raw.slice(0, 400),
-    });
-    throw new Error(`COQL error: non-JSON response (HTTP ${response.status})`);
-  }
-
-  if ((data as any).status === "error" || (data as any).code) {
-    if ((data as any).code === "NODATA") {
-      console.log("COQL query returned no data");
-      return [];
+    if (response.status === 429) {
+      throw new ZohoRateLimitError("Zoho API rate limited", 60);
     }
-    console.error("COQL error:", data);
-    throw new Error(`COQL error: ${(data as any).message || (data as any).code}`);
+
+    // Zoho sometimes returns 204 No Content for empty COQL results
+    if (response.status === 204) {
+      console.log("COQL query returned 204 (no content) - no more records");
+      break;
+    }
+
+    const raw = await response.text();
+    if (!raw) {
+      console.error("COQL empty response", {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      throw new Error(`COQL error: empty response (HTTP ${response.status})`);
+    }
+
+    let data: ZohoListResponse;
+    try {
+      data = JSON.parse(raw) as ZohoListResponse;
+    } catch {
+      console.error("COQL non-JSON response", {
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: raw.slice(0, 400),
+      });
+      throw new Error(`COQL error: non-JSON response (HTTP ${response.status})`);
+    }
+
+    if ((data as any).status === "error" || (data as any).code) {
+      if ((data as any).code === "NODATA") {
+        console.log("COQL query returned no data - pagination complete");
+        break;
+      }
+      console.error("COQL error:", data);
+      throw new Error(`COQL error: ${(data as any).message || (data as any).code}`);
+    }
+
+    const records = data.data || [];
+    allRecords.push(...records);
+    console.log(`COQL fetched ${records.length} records, total so far: ${allRecords.length}`);
+
+    // If we got fewer than limit, we've reached the end
+    if (records.length < limit) {
+      console.log("COQL pagination complete - received fewer than limit");
+      break;
+    }
+
+    offset += limit;
+    iteration++;
+
+    // Small delay to avoid rate limiting
+    await sleep(100);
   }
 
-  return data.data || [];
+  console.log(`COQL total records fetched: ${allRecords.length}`);
+  return allRecords;
 }
 
 async function fetchRecordById(
