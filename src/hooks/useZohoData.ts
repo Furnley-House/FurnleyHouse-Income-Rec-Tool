@@ -83,10 +83,14 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export function useZohoData(): UseZohoDataReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
 
   const loadZohoData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setIsRateLimited(false);
+    setRetryAfterSeconds(null);
 
     try {
       // Fetch data SEQUENTIALLY with delays to avoid Zoho rate limiting
