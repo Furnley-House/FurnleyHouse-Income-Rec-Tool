@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { useZohoData } from '@/hooks/useZohoData';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,9 @@ import {
   Settings,
   Cloud,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import {
   Popover,
@@ -33,7 +36,25 @@ export function SessionHeader() {
     payments
   } = useReconciliationStore();
   
-  const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
+  const { loadZohoData, isLoading: isZohoLoading, isRateLimited, retryAfterSeconds } = useZohoData();
+  const [countdown, setCountdown] = useState<number | null>(null);
+  
+  // Countdown timer for rate limit
+  useEffect(() => {
+    if (isRateLimited && retryAfterSeconds) {
+      setCountdown(retryAfterSeconds);
+      const interval = setInterval(() => {
+        setCountdown(prev => {
+          if (prev === null || prev <= 1) {
+            clearInterval(interval);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isRateLimited, retryAfterSeconds]);
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -49,6 +70,11 @@ export function SessionHeader() {
     : 0;
   
   const handleRefreshData = async () => {
+    if (countdown && countdown > 0) {
+      toast.warning(`Please wait ${countdown} seconds before retrying`);
+      return;
+    }
+    
     setLoadingState(true);
     toast.info('Loading data from Zoho CRM...');
     const data = await loadZohoData();
@@ -57,7 +83,7 @@ export function SessionHeader() {
       toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
     } else {
       setLoadingState(false, 'Failed to load Zoho data');
-      toast.error('Failed to load data from Zoho CRM');
+      // Don't show generic error toast if rate limited - the button will show the countdown
     }
   };
   
