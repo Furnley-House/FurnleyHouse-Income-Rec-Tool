@@ -447,15 +447,21 @@ serve(async (req) => {
 
       case "getPayments": {
         // Fetch Bank_Payments with optional status filter
-        // Important: COQL is strict about field API names. To avoid "invalid column" failures,
-        // we only COQL-filter by Status and then hydrate full records by id.
+        // Important: COQL is strict about field API names. We resolve the actual API name for
+        // fields like "Status" first, then hydrate full records by id.
 
         if (params.status) {
+          const moduleFields = await getModuleFields(accessToken, "Bank_Payments");
+          const statusField = resolveFieldApiName(moduleFields, ["Status"]);
+          if (!statusField) {
+            throw new Error("Could not resolve Bank_Payments status field (expected label/api_name 'Status')");
+          }
+
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
 
-          const query = `select id from Bank_Payments where Status in (${statusFilter})`;
+          const query = `select id from Bank_Payments where ${statusField} in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
 
           const hits = await queryWithCOQL(accessToken, query);
@@ -469,21 +475,33 @@ serve(async (req) => {
 
       case "getPaymentLineItems": {
         // Fetch Bank_Payment_Lines with optional filters
-        // Same approach as payments: COQL only for filtering -> hydrate full records.
+        // Same approach as payments: resolve field API names for COQL filters -> hydrate full records.
+
+        const moduleFields = await getModuleFields(accessToken, "Bank_Payment_Lines");
+        const statusField = resolveFieldApiName(moduleFields, ["Status"]);
+        const paymentLookupField = resolveFieldApiName(moduleFields, ["Bank_Payment", "Bank Payment"]);
 
         if (params.paymentId) {
-          const query = `select id from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
+          if (!paymentLookupField) {
+            throw new Error("Could not resolve Bank_Payment_Lines payment lookup field (expected label/api_name 'Bank_Payment')");
+          }
+
+          const query = `select id from Bank_Payment_Lines where ${paymentLookupField} = '${params.paymentId}'`;
           console.log("[Zoho] COQL query:", query);
 
           const hits = await queryWithCOQL(accessToken, query);
           const ids = hits.map((r) => String(r.id)).filter(Boolean);
           result = await hydrateRecordsById(accessToken, "Bank_Payment_Lines", ids);
         } else if (params.status) {
+          if (!statusField) {
+            throw new Error("Could not resolve Bank_Payment_Lines status field (expected label/api_name 'Status')");
+          }
+
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
 
-          const query = `select id from Bank_Payment_Lines where Status in (${statusFilter})`;
+          const query = `select id from Bank_Payment_Lines where ${statusField} in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
 
           const hits = await queryWithCOQL(accessToken, query);
@@ -497,34 +515,60 @@ serve(async (req) => {
 
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
-        // Same approach: COQL only for filters -> hydrate full records.
+        // Resolve field API names (Zoho can differ per org) -> COQL filter -> hydrate full records.
+
+        const moduleFields = await getModuleFields(accessToken, "Expectations");
+        const statusApi = resolveFieldApiName(moduleFields, ["Status", "Expectation_Status", "Expectation Status"]);
+        const providerApi = resolveFieldApiName(moduleFields, ["Provider", "Provider_Name", "Provider Name"]);
+        const superbiaApi = resolveFieldApiName(moduleFields, ["Superbia_Company", "Superbia Company"]);
+        const calcDateApi = resolveFieldApiName(moduleFields, ["Calculation_Date", "Calculation Date"]);
 
         const conditions: string[] = [];
 
         if (params.status) {
+          if (!statusApi) {
+            throw new Error("Could not resolve Expectations status field (label/api_name like 'Status')");
+          }
+
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          conditions.push(`Status in (${statusFilter})`);
+          conditions.push(`${statusApi} in (${statusFilter})`);
         }
 
         if (params.providerId) {
-          conditions.push(`Provider_Name = '${params.providerId}'`);
+          if (providerApi) {
+            conditions.push(`${providerApi} = '${params.providerId}'`);
+          } else {
+            console.warn("[Zoho] providerId filter requested but Provider field could not be resolved; skipping filter");
+          }
         }
 
         if (params.superbiaCompany) {
-          const companies = Array.isArray(params.superbiaCompany)
-            ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
-            : `'${params.superbiaCompany}'`;
-          conditions.push(`Superbia_Company in (${companies})`);
+          if (superbiaApi) {
+            const companies = Array.isArray(params.superbiaCompany)
+              ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
+              : `'${params.superbiaCompany}'`;
+            conditions.push(`${superbiaApi} in (${companies})`);
+          } else {
+            console.warn("[Zoho] superbiaCompany filter requested but field could not be resolved; skipping filter");
+          }
         }
 
         if (params.dateFrom) {
-          conditions.push(`Calculation_Date >= '${params.dateFrom}'`);
+          if (calcDateApi) {
+            conditions.push(`${calcDateApi} >= '${params.dateFrom}'`);
+          } else {
+            console.warn("[Zoho] dateFrom filter requested but Calculation Date field could not be resolved; skipping filter");
+          }
         }
 
         if (params.dateTo) {
-          conditions.push(`Calculation_Date <= '${params.dateTo}'`);
+          if (calcDateApi) {
+            conditions.push(`${calcDateApi} <= '${params.dateTo}'`);
+          } else {
+            console.warn("[Zoho] dateTo filter requested but Calculation Date field could not be resolved; skipping filter");
+          }
         }
 
         if (conditions.length > 0) {
