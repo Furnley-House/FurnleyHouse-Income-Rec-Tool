@@ -347,6 +347,12 @@ async function queryWithCOQL(
     throw new ZohoRateLimitError("Zoho API rate limited", 60);
   }
 
+  // Zoho sometimes returns 204 No Content for empty COQL results
+  if (response.status === 204) {
+    console.log("COQL query returned 204 (no content)");
+    return [];
+  }
+
   const raw = await response.text();
   if (!raw) {
     console.error("COQL empty response", {
