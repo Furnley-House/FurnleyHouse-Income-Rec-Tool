@@ -72,6 +72,8 @@ interface ZohoProvider {
 interface UseZohoDataReturn {
   isLoading: boolean;
   error: string | null;
+  isRateLimited: boolean;
+  retryAfterSeconds: number | null;
   loadZohoData: () => Promise<{ payments: Payment[]; expectations: Expectation[] } | null>;
 }
 
@@ -81,10 +83,14 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export function useZohoData(): UseZohoDataReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
 
   const loadZohoData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setIsRateLimited(false);
+    setRetryAfterSeconds(null);
 
     try {
       // Fetch data SEQUENTIALLY with delays to avoid Zoho rate limiting
@@ -92,14 +98,30 @@ export function useZohoData(): UseZohoDataReturn {
       
       console.log('[Zoho] Starting sequential data load to avoid rate limits...');
       
+      // Helper to check for rate limit errors in response
+      const checkRateLimit = (res: any, context: string) => {
+        if (res.error) throw new Error(`${context}: ${res.error.message}`);
+        if (!res.data?.success) {
+          // Check for rate limit error
+          if (res.data?.code === 'ZOHO_RATE_LIMIT') {
+            const retrySeconds = res.data?.retryAfterSeconds || 60;
+            throw { 
+              isRateLimit: true, 
+              retryAfterSeconds: retrySeconds,
+              message: `Zoho API rate limited. Please wait ${retrySeconds} seconds before retrying.`
+            };
+          }
+          throw new Error(`${context}: ${res.data?.error || 'Unknown error'}`);
+        }
+        return res.data?.data || [];
+      };
+
       // 1. Fetch providers first (smallest dataset, needed for mapping)
       console.log('[Zoho] Loading providers...');
       const providersRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getProviders' } 
       });
-      if (providersRes.error) throw new Error(`Providers: ${providersRes.error.message}`);
-      if (!providersRes.data?.success) throw new Error(`Providers: ${providersRes.data?.error || 'Unknown error'}`);
-      const zohoProviders: ZohoProvider[] = providersRes.data?.data || [];
+      const zohoProviders: ZohoProvider[] = checkRateLimit(providersRes, 'Providers');
       console.log(`[Zoho] Loaded ${zohoProviders.length} providers`);
       
       await delay(500); // 500ms delay between calls
@@ -109,9 +131,8 @@ export function useZohoData(): UseZohoDataReturn {
       const paymentsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getPayments' } 
       });
-      if (paymentsRes.error) throw new Error(`Payments: ${paymentsRes.error.message}`);
-      if (!paymentsRes.data?.success) throw new Error(`Payments: ${paymentsRes.data?.error || 'Unknown error'}`);
-      const zohoPayments: ZohoPayment[] = paymentsRes.data?.data || [];
+      const zohoPayments: ZohoPayment[] = checkRateLimit(paymentsRes, 'Payments');
+      console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       
       await delay(500);
@@ -121,9 +142,8 @@ export function useZohoData(): UseZohoDataReturn {
       const lineItemsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getPaymentLineItems' } 
       });
-      if (lineItemsRes.error) throw new Error(`Line Items: ${lineItemsRes.error.message}`);
-      if (!lineItemsRes.data?.success) throw new Error(`Line Items: ${lineItemsRes.data?.error || 'Unknown error'}`);
-      const zohoLineItems: ZohoLineItem[] = lineItemsRes.data?.data || [];
+      const zohoLineItems: ZohoLineItem[] = checkRateLimit(lineItemsRes, 'Line Items');
+      console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       
       await delay(500);
@@ -133,9 +153,8 @@ export function useZohoData(): UseZohoDataReturn {
       const expectationsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getExpectations' } 
       });
-      if (expectationsRes.error) throw new Error(`Expectations: ${expectationsRes.error.message}`);
-      if (!expectationsRes.data?.success) throw new Error(`Expectations: ${expectationsRes.data?.error || 'Unknown error'}`);
-      const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
+      const zohoExpectations: ZohoExpectation[] = checkRateLimit(expectationsRes, 'Expectations');
+      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
       console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
 
       // DEBUG: Verify raw keys + expected amount presence
@@ -286,15 +305,23 @@ export function useZohoData(): UseZohoDataReturn {
     console.log(`[Zoho] Sample expectations:`, sampleCalcDates);
 
     return { payments, expectations };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
-      console.error('[Zoho] Error:', message);
-      setError(message);
+    } catch (err: any) {
+      // Check if this is a rate limit error
+      if (err?.isRateLimit) {
+        console.warn('[Zoho] Rate limited:', err.message);
+        setIsRateLimited(true);
+        setRetryAfterSeconds(err.retryAfterSeconds);
+        setError(err.message);
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
+        console.error('[Zoho] Error:', message);
+        setError(message);
+      }
       return null;
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  return { isLoading, error, loadZohoData };
+  return { isLoading, error, isRateLimited, retryAfterSeconds, loadZohoData };
 }
