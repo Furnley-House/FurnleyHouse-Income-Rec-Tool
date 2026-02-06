@@ -212,11 +212,14 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   // Preview counts for each tolerance level
   const tolerancePreview = useMemo(() => {
+    if (!payment) return toleranceSteps.map(tol => ({ tolerance: tol, matchCount: 0 }));
     return toleranceSteps.map(tol => ({
       tolerance: tol,
       matchCount: calculateMatchesAtTolerance(tol).length
     }));
-  }, [payment.lineItems, expectations, pendingMatches]);
+  }, [payment?.lineItems, expectations, pendingMatches]);
+  
+  if (!payment) return null;
   
   const totalItems = payment.lineItems.length;
   const processedItems = payment.lineItems.filter(li => 
