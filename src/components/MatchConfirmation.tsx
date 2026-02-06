@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
-import { useZohoSync } from '@/hooks/useZohoSync';
+import { useCachedData } from '@/hooks/useCachedData';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +22,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function MatchConfirmation() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [notes, setNotes] = useState('');
   
   const { 
@@ -38,7 +39,7 @@ export function MatchConfirmation() {
     tolerance
   } = useReconciliationStore();
   
-  const { syncMatches, syncPaymentStatus } = useZohoSync();
+  const { savePendingMatch, updateLineItemStatus, updateExpectationStatus, updatePaymentStatus } = useCachedData();
   
   const payment = getSelectedPayment();
   const summary = getPendingMatchSummary();
@@ -99,17 +100,14 @@ export function MatchConfirmation() {
   const handleConfirm = async () => {
     if (!payment) return;
     
-    setIsSyncing(true);
+    setIsSaving(true);
     
     try {
-      // First, confirm matches locally
+      // First, confirm matches locally in the store
       confirmPendingMatches(notes);
       
-      // Sync matches to Zoho
-      const matchSyncData = pendingMatches.map(pm => {
-        const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
-        const expectation = expectations.find(e => e.id === pm.expectationId);
-        
+      // Save each match to the local cache (pending sync to Zoho)
+      for (const pm of pendingMatches) {
         // Determine match quality based on variance
         let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
         const absVariance = Math.abs(pm.variancePercentage);
@@ -117,26 +115,26 @@ export function MatchConfirmation() {
         else if (absVariance <= 2) matchQuality = 'good';
         else if (absVariance <= tolerance) matchQuality = 'acceptable';
         
-        return {
+        // Save to pending_matches table (will be synced to Zoho later)
+        await savePendingMatch({
           paymentId: payment.id,
-          paymentZohoId: payment.zohoId || payment.id,
           lineItemId: pm.lineItemId,
-          lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
           expectationId: pm.expectationId,
-          expectationZohoId: expectation?.zohoId || pm.expectationId,
           matchedAmount: pm.lineItemAmount,
           variance: pm.variance,
           variancePercentage: pm.variancePercentage,
-          matchType: 'full' as const,
-          matchMethod: 'manual' as const,
           matchQuality,
-          notes: notes,
-        };
-      });
+          notes,
+        });
+        
+        // Update cached line item status
+        await updateLineItemStatus(pm.lineItemId, 'matched', pm.expectationId, notes);
+        
+        // Update cached expectation status
+        await updateExpectationStatus(pm.expectationId, 'matched', pm.lineItemAmount);
+      }
       
-      await syncMatches(matchSyncData);
-      
-      // Update payment status in Zoho
+      // Update cached payment status
       const newReconciledAmount = payment.reconciledAmount + summary.totalLineItemAmount;
       const newRemainingAmount = payment.amount - newReconciledAmount;
       const allMatched = payment.lineItems.every(li => 
@@ -144,15 +142,14 @@ export function MatchConfirmation() {
       );
       const newStatus = allMatched ? 'reconciled' : 'in_progress';
       
-      await syncPaymentStatus(
-        payment.zohoId || payment.id,
-        newStatus,
-        newReconciledAmount,
-        newRemainingAmount,
-        notes
-      );
+      await updatePaymentStatus(payment.id, newStatus, newReconciledAmount, newRemainingAmount);
+      
+      toast.success(`Saved ${pendingMatches.length} match(es) locally. Click "Sync" to push to Zoho.`);
+    } catch (error) {
+      console.error('[MatchConfirmation] Error saving matches:', error);
+      toast.error('Failed to save matches');
     } finally {
-      setIsSyncing(false);
+      setIsSaving(false);
     }
     
     setNotes('');
@@ -352,18 +349,18 @@ export function MatchConfirmation() {
           </div>
           
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isSyncing}>
+            <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
             <Button 
               onClick={handleConfirm} 
               className="gap-2"
-              disabled={(hasOutOfTolerance && !notes.trim()) || isSyncing}
+              disabled={(hasOutOfTolerance && !notes.trim()) || isSaving}
             >
-              {isSyncing ? (
+              {isSaving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Syncing to Zoho...
+                  Saving...
                 </>
               ) : (
                 <>

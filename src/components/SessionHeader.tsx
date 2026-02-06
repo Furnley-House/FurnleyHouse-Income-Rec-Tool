@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { useZohoData } from '@/hooks/useZohoData';
+import { useCachedData } from '@/hooks/useCachedData';
+import { useSyncStatus } from '@/hooks/useSyncStatus';
+import { useZohoSync } from '@/hooks/useZohoSync';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { 
   Sparkles, 
   Calendar,
@@ -12,8 +16,10 @@ import {
   Cloud,
   Loader2,
   RefreshCw,
-  AlertTriangle,
-  Clock
+  Clock,
+  Upload,
+  Database,
+  CheckCircle2
 } from 'lucide-react';
 import {
   Popover,
@@ -33,16 +39,32 @@ export function SessionHeader() {
     isLoadingData,
     setZohoData,
     setLoadingState,
-    payments
+    payments,
+    expectations,
+    matches
   } = useReconciliationStore();
   
-  const { loadZohoData, isLoading: isZohoLoading, isRateLimited, retryAfterSeconds } = useZohoData();
+  const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
+  const { saveToCache, loadFromCache, getPendingMatches, markMatchesSynced, isLoading: isCacheLoading } = useCachedData();
+  const { syncStatus, refresh: refreshSyncStatus, updateLastDownload, updateLastSync } = useSyncStatus();
+  const { syncMatch } = useZohoSync();
+  
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  
+  // Load pending match count on mount
+  useEffect(() => {
+    const loadPendingCount = async () => {
+      const pending = await getPendingMatches();
+      setPendingCount(pending?.length || 0);
+    };
+    loadPendingCount();
+  }, [getPendingMatches, matches]);
   
   // Countdown timer for rate limit
   useEffect(() => {
-    if (isRateLimited && retryAfterSeconds) {
-      setCountdown(retryAfterSeconds);
+    if (countdown && countdown > 0) {
       const interval = setInterval(() => {
         setCountdown(prev => {
           if (prev === null || prev <= 1) {
@@ -54,7 +76,7 @@ export function SessionHeader() {
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [isRateLimited, retryAfterSeconds]);
+  }, [countdown]);
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -69,15 +91,25 @@ export function SessionHeader() {
     ? (statistics.reconciledPayments / statistics.totalPayments) * 100 
     : 0;
   
-  const handleRefreshData = async () => {
+  // Download data from Zoho and save to cache
+  const handleDownloadData = async () => {
     if (countdown && countdown > 0) {
       toast.warning(`Please wait ${countdown} seconds before retrying`);
       return;
     }
     
+    // Check if there are pending matches
+    if (pendingCount > 0) {
+      toast.error(`Cannot download: ${pendingCount} pending matches need to be synced first`, {
+        description: 'Please sync your changes to Zoho before downloading new data'
+      });
+      return;
+    }
+    
     setLoadingState(true);
-    toast.info('Loading data from Zoho CRM...');
-    const result = await loadZohoData();
+    toast.info('Downloading unmatched data from Zoho CRM...');
+    
+    const result = await loadZohoData({ unmatchedOnly: true });
     
     // Handle rate limiting immediately
     if (result.rateLimitInfo?.isRateLimited) {
@@ -88,16 +120,111 @@ export function SessionHeader() {
     }
     
     if (result.data) {
-      setZohoData(result.data.payments, result.data.expectations);
-      toast.success(`Loaded ${result.data.payments.length} payments and ${result.data.expectations.length} expectations from Zoho`);
+      // Save to cache first
+      const saved = await saveToCache(result.data.payments, result.data.expectations);
+      if (saved) {
+        await updateLastDownload();
+        setZohoData(result.data.payments, result.data.expectations);
+        toast.success(`Cached ${result.data.payments.length} payments and ${result.data.expectations.length} expectations`);
+      } else {
+        toast.error('Failed to cache data');
+        setLoadingState(false, 'Cache error');
+      }
     } else {
       setLoadingState(false, 'Failed to load Zoho data');
-      toast.error('Failed to load data from Zoho CRM');
+      toast.error('Failed to download data from Zoho CRM');
     }
   };
   
-  const isLoading = isLoadingData || isZohoLoading;
+  // Load data from local cache
+  const handleLoadFromCache = async () => {
+    setLoadingState(true);
+    toast.info('Loading from local cache...');
+    
+    const cached = await loadFromCache();
+    if (cached && cached.payments.length > 0) {
+      setZohoData(cached.payments, cached.expectations);
+      toast.success(`Loaded ${cached.payments.length} payments from cache`);
+    } else {
+      toast.warning('No cached data found. Please download from Zoho.');
+      setLoadingState(false);
+    }
+  };
+  
+  // Sync pending matches to Zoho
+  const handleSyncToZoho = async () => {
+    const pending = await getPendingMatches();
+    if (!pending || pending.length === 0) {
+      toast.info('No pending matches to sync');
+      return;
+    }
+    
+    setIsSyncing(true);
+    toast.info(`Syncing ${pending.length} matches to Zoho...`);
+    
+    let successCount = 0;
+    let failCount = 0;
+    const syncedIds: string[] = [];
+    
+    for (const match of pending) {
+      // Find the payment and line item from store
+      const payment = payments.find(p => p.id === match.paymentId);
+      const lineItem = payment?.lineItems.find(li => li.id === match.lineItemId);
+      const expectation = expectations.find(e => e.id === match.expectationId);
+      
+      if (!payment || !lineItem || !expectation) {
+        console.warn('[Sync] Missing data for match:', match);
+        failCount++;
+        continue;
+      }
+      
+      const success = await syncMatch({
+        paymentId: match.paymentId,
+        paymentZohoId: payment.zohoId || payment.id,
+        lineItemId: match.lineItemId,
+        lineItemZohoId: lineItem.zohoId || lineItem.id,
+        expectationId: match.expectationId,
+        expectationZohoId: expectation.zohoId || expectation.id,
+        matchedAmount: match.matchedAmount,
+        variance: match.variance,
+        variancePercentage: match.variancePercentage,
+        matchType: 'full',
+        matchMethod: 'manual',
+        matchQuality: (match.matchQuality as 'perfect' | 'good' | 'acceptable' | 'warning') || 'good',
+        notes: match.notes || '',
+      });
+      
+      if (success) {
+        successCount++;
+        syncedIds.push(match.id);
+      } else {
+        failCount++;
+      }
+    }
+    
+    // Mark synced matches
+    if (syncedIds.length > 0) {
+      await markMatchesSynced(syncedIds);
+      await updateLastSync();
+      await refreshSyncStatus();
+    }
+    
+    // Update pending count
+    const remainingPending = await getPendingMatches();
+    setPendingCount(remainingPending?.length || 0);
+    
+    setIsSyncing(false);
+    
+    if (failCount === 0) {
+      toast.success(`Synced ${successCount} matches to Zoho`);
+    } else {
+      toast.warning(`Synced ${successCount} matches, ${failCount} failed`);
+    }
+  };
+  
+  const isLoading = isLoadingData || isZohoLoading || isCacheLoading;
   const hasData = payments.length > 0;
+  const hasPendingMatches = pendingCount > 0;
   
   return (
     <header className="h-auto min-h-[100px] bg-card border-b border-border px-6 py-4">
@@ -112,6 +239,11 @@ export function SessionHeader() {
             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
               <Calendar className="h-3.5 w-3.5" />
               December 2024
+              {syncStatus?.lastDownloadAt && (
+                <span className="ml-2 text-xs">
+                  • Last sync: {new Date(syncStatus.lastDownloadAt).toLocaleTimeString()}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -142,15 +274,42 @@ export function SessionHeader() {
           />
         </div>
         
-        {/* Right: Progress and Actions */}
-        <div className="flex items-center gap-4">
-          {/* Zoho Data Status & Refresh */}
+        {/* Right: Data Sync Controls */}
+        <div className="flex items-center gap-3">
+          {/* Cache Status */}
+          {hasData && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded-md px-2 py-1">
+              <Database className="h-3.5 w-3.5" />
+              <span>Cached</span>
+              {hasPendingMatches && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {pendingCount} pending
+                </Badge>
+              )}
+            </div>
+          )}
+          
+          {/* Load from Cache */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadFromCache}
+            disabled={isLoading}
+            className="gap-2"
+            title="Load from local cache"
+          >
+            <Database className="h-4 w-4" />
+            Cache
+          </Button>
+          
+          {/* Download from Zoho */}
           <Button
             variant={countdown ? "destructive" : "outline"}
             size="sm"
-            onClick={handleRefreshData}
-            disabled={isLoading || (countdown !== null && countdown > 0)}
+            onClick={handleDownloadData}
+            disabled={isLoading || (countdown !== null && countdown > 0) || hasPendingMatches}
             className="gap-2"
+            title={hasPendingMatches ? 'Sync pending matches first' : 'Download unmatched data from Zoho'}
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -160,13 +319,37 @@ export function SessionHeader() {
               <RefreshCw className="h-4 w-4" />
             )}
             <Cloud className="h-4 w-4" />
-            {countdown ? `Retry in ${countdown}s` : hasData ? 'Refresh' : 'Load Data'}
+            {countdown ? `Retry in ${countdown}s` : 'Download'}
+          </Button>
+          
+          {/* Sync to Zoho */}
+          <Button
+            variant={hasPendingMatches ? "default" : "outline"}
+            size="sm"
+            onClick={handleSyncToZoho}
+            disabled={isSyncing || !hasPendingMatches}
+            className="gap-2"
+            title="Sync matches to Zoho"
+          >
+            {isSyncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : hasPendingMatches ? (
+              <Upload className="h-4 w-4" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            Sync
+            {hasPendingMatches && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {pendingCount}
+              </Badge>
+            )}
           </Button>
           
           {/* Overall Progress */}
-          <div className="w-48">
+          <div className="w-36">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-muted-foreground">Overall Progress</span>
+              <span className="text-xs font-medium text-muted-foreground">Progress</span>
               <span className="text-xs font-semibold text-foreground">
                 {progressPercentage.toFixed(0)}%
               </span>
@@ -179,7 +362,7 @@ export function SessionHeader() {
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2">
                 <Settings className="h-4 w-4" />
-                Tolerance: {tolerance}%
+                {tolerance}%
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-64">

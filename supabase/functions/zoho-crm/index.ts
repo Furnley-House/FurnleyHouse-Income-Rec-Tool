@@ -332,7 +332,6 @@ serve(async (req) => {
         // Fetch Bank_Payments with optional status filter
         // Field name is Payment_Provider (lookup) not Provider_Name
         const fields = "Payment_ID,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
-        const fetchParams: Record<string, string> = { fields };
         
         if (params.status) {
           // Use COQL for filtering
@@ -342,17 +341,24 @@ serve(async (req) => {
           const query = `SELECT ${fields} FROM Bank_Payments WHERE Status IN (${statusFilter})`;
           result = await queryWithCOQL(accessToken, query);
         } else {
-          result = await fetchAllRecords(accessToken, "Bank_Payments", fetchParams);
+          result = await fetchAllRecords(accessToken, "Bank_Payments", { fields });
         }
         break;
       }
 
       case "getPaymentLineItems": {
-        // Fetch Bank_Payment_Lines for a specific payment
+        // Fetch Bank_Payment_Lines with optional status filter
         const fields = "Line_Item_ID,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
         
         if (params.paymentId) {
           const query = `SELECT ${fields} FROM Bank_Payment_Lines WHERE Bank_Payment = '${params.paymentId}'`;
+          result = await queryWithCOQL(accessToken, query);
+        } else if (params.status) {
+          // Filter by status
+          const statusFilter = Array.isArray(params.status) 
+            ? params.status.map((s: string) => `'${s}'`).join(", ")
+            : `'${params.status}'`;
+          const query = `SELECT ${fields} FROM Bank_Payment_Lines WHERE Status IN (${statusFilter})`;
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Bank_Payment_Lines", { fields });

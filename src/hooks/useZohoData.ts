@@ -10,7 +10,7 @@ interface ZohoPayment {
   Bank_Reference?: string;
   Payment_Date?: string;
   Amount?: unknown;
-  Payment_Provider?: { name: string; id: string }; // Correct Zoho field name
+  Payment_Provider?: { name: string; id: string };
   Status?: string;
   Reconciled_Amount?: unknown;
   Remaining_Amount?: unknown;
@@ -40,7 +40,6 @@ interface ZohoExpectation {
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
-  // Provider is a lookup field to Providers module (returns {name, id})
   Provider?: { name: string; id: string };
   Adviser_Name?: string;
   Superbia_Company?: string;
@@ -79,12 +78,17 @@ interface RateLimitInfo {
   retryAfterSeconds: number;
 }
 
+export interface FetchOptions {
+  /** Only fetch unmatched/partial records (for incremental sync) */
+  unmatchedOnly?: boolean;
+}
+
 interface UseZohoDataReturn {
   isLoading: boolean;
   error: string | null;
   isRateLimited: boolean;
   retryAfterSeconds: number | null;
-  loadZohoData: () => Promise<{ data: LoadResult | null; rateLimitInfo?: RateLimitInfo }>;
+  loadZohoData: (options?: FetchOptions) => Promise<{ data: LoadResult | null; rateLimitInfo?: RateLimitInfo }>;
 }
 
 // Helper to add delay between API calls
@@ -96,7 +100,8 @@ export function useZohoData(): UseZohoDataReturn {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
 
-  const loadZohoData = useCallback(async () => {
+  const loadZohoData = useCallback(async (options: FetchOptions = {}) => {
+    const { unmatchedOnly = true } = options; // Default to only fetching unmatched data
     setIsLoading(true);
     setError(null);
     setIsRateLimited(false);
@@ -136,35 +141,38 @@ export function useZohoData(): UseZohoDataReturn {
       
       await delay(500); // 500ms delay between calls
       
-      // 2. Fetch payments
-      console.log('[Zoho] Loading payments...');
-      const paymentsRes = await supabase.functions.invoke('zoho-crm', { 
-        body: { action: 'getPayments' } 
-      });
+      // 2. Fetch payments - filter by status if unmatchedOnly
+      console.log(`[Zoho] Loading payments (unmatchedOnly: ${unmatchedOnly})...`);
+      const paymentsBody: Record<string, unknown> = { action: 'getPayments' };
+      if (unmatchedOnly) {
+        paymentsBody.params = { status: ['unreconciled', 'in_progress'] };
+      }
+      const paymentsRes = await supabase.functions.invoke('zoho-crm', { body: paymentsBody });
       const zohoPayments: ZohoPayment[] = checkRateLimit(paymentsRes, 'Payments');
       console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
-      console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       
       await delay(500);
       
-      // 3. Fetch line items (largest dataset, may take longer)
-      console.log('[Zoho] Loading payment line items...');
-      const lineItemsRes = await supabase.functions.invoke('zoho-crm', { 
-        body: { action: 'getPaymentLineItems' } 
-      });
+      // 3. Fetch line items - filter by status if unmatchedOnly
+      console.log(`[Zoho] Loading payment line items (unmatchedOnly: ${unmatchedOnly})...`);
+      const lineItemsBody: Record<string, unknown> = { action: 'getPaymentLineItems' };
+      if (unmatchedOnly) {
+        lineItemsBody.params = { status: ['unmatched'] };
+      }
+      const lineItemsRes = await supabase.functions.invoke('zoho-crm', { body: lineItemsBody });
       const zohoLineItems: ZohoLineItem[] = checkRateLimit(lineItemsRes, 'Line Items');
       console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
-      console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       
       await delay(500);
       
-      // 4. Fetch expectations
-      console.log('[Zoho] Loading expectations...');
-      const expectationsRes = await supabase.functions.invoke('zoho-crm', { 
-        body: { action: 'getExpectations' } 
-      });
+      // 4. Fetch expectations - filter by status if unmatchedOnly
+      console.log(`[Zoho] Loading expectations (unmatchedOnly: ${unmatchedOnly})...`);
+      const expectationsBody: Record<string, unknown> = { action: 'getExpectations' };
+      if (unmatchedOnly) {
+        expectationsBody.params = { status: ['unmatched', 'partial'] };
+      }
+      const expectationsRes = await supabase.functions.invoke('zoho-crm', { body: expectationsBody });
       const zohoExpectations: ZohoExpectation[] = checkRateLimit(expectationsRes, 'Expectations');
-      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
       console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
 
       // DEBUG: Verify raw keys + expected amount presence
