@@ -419,7 +419,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
                         <Circle className="h-4 w-4 text-muted-foreground/40" />
                       )}
                       <span className="font-medium text-sm">
-                        {tol === 0 ? 'Exact Match' : `${tol}% Tolerance`}
+                        {tol === 0 ? 'Exact Match' : tol === Infinity ? 'Any Variance' : `${tol}% Tolerance`}
                       </span>
                     </div>
                     <Badge variant="outline" className={cn("text-xs h-5", getToleranceColor(tol))}>
