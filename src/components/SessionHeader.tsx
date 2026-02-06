@@ -83,9 +83,15 @@ export function SessionHeader() {
       toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
     } else {
       setLoadingState(false, 'Failed to load Zoho data');
-      // Don't show generic error toast if rate limited - the button will show the countdown
     }
   };
+  
+  // Start countdown when rate limit is detected
+  useEffect(() => {
+    if (isRateLimited && retryAfterSeconds && retryAfterSeconds > 0) {
+      toast.error(`Zoho API rate limited. Please wait ${retryAfterSeconds} seconds.`);
+    }
+  }, [isRateLimited, retryAfterSeconds]);
   
   const isLoading = isLoadingData || isZohoLoading;
   const hasData = payments.length > 0;
