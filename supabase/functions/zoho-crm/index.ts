@@ -343,15 +343,38 @@ async function queryWithCOQL(
     body: JSON.stringify({ select_query: query }),
   });
 
-  const data: ZohoListResponse = await response.json();
-  
-  if (data.status === "error" || data.code) {
-    if (data.code === "NODATA") {
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  const raw = await response.text();
+  if (!raw) {
+    console.error("COQL empty response", {
+      status: response.status,
+      statusText: response.statusText,
+    });
+    throw new Error(`COQL error: empty response (HTTP ${response.status})`);
+  }
+
+  let data: ZohoListResponse;
+  try {
+    data = JSON.parse(raw) as ZohoListResponse;
+  } catch {
+    console.error("COQL non-JSON response", {
+      status: response.status,
+      statusText: response.statusText,
+      bodyPreview: raw.slice(0, 400),
+    });
+    throw new Error(`COQL error: non-JSON response (HTTP ${response.status})`);
+  }
+
+  if ((data as any).status === "error" || (data as any).code) {
+    if ((data as any).code === "NODATA") {
       console.log("COQL query returned no data");
       return [];
     }
     console.error("COQL error:", data);
-    throw new Error(`COQL error: ${data.message || data.code}`);
+    throw new Error(`COQL error: ${(data as any).message || (data as any).code}`);
   }
 
   return data.data || [];
