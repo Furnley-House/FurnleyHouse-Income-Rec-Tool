@@ -388,88 +388,95 @@ serve(async (req) => {
 
       case "getPayments": {
         // Fetch Bank_Payments with optional status filter
-        // Field name is Payment_Provider (lookup) not Provider_Name
-        // Note: Zoho COQL requires valid API field names; "id" is the record identifier.
-        const fields = "id,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
-        
+        // Important: COQL is strict about field API names. To avoid "invalid column" failures,
+        // we only COQL-filter by Status and then hydrate full records by id.
+
         if (params.status) {
-          // Use COQL for filtering - COQL uses 'in' (lowercase) operator
-          // Format: Status in ('value1', 'value2')
-          const statusFilter = Array.isArray(params.status) 
+          const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `select ${fields} from Bank_Payments where Status in (${statusFilter})`;
+
+          const query = `select id from Bank_Payments where Status in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payments", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Bank_Payments", { fields });
+          result = await fetchAllRecords(accessToken, "Bank_Payments");
         }
         break;
       }
 
       case "getPaymentLineItems": {
-        // Fetch Bank_Payment_Lines with optional status filter
-        // Note: "id" is the record identifier.
-        const fields = "id,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
-        
+        // Fetch Bank_Payment_Lines with optional filters
+        // Same approach as payments: COQL only for filtering -> hydrate full records.
+
         if (params.paymentId) {
-          const query = `select ${fields} from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
-          result = await queryWithCOQL(accessToken, query);
+          const query = `select id from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
+          console.log("[Zoho] COQL query:", query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payment_Lines", ids);
         } else if (params.status) {
-          // Filter by status - COQL uses 'in' (lowercase) operator
-          const statusFilter = Array.isArray(params.status) 
+          const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `select ${fields} from Bank_Payment_Lines where Status in (${statusFilter})`;
+
+          const query = `select id from Bank_Payment_Lines where Status in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payment_Lines", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Bank_Payment_Lines", { fields });
+          result = await fetchAllRecords(accessToken, "Bank_Payment_Lines");
         }
         break;
       }
 
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
-        // Provider is the lookup field to Providers module (returns {name, id})
-        // Note: "id" is the record identifier.
-        const fields = "id,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
-        
+        // Same approach: COQL only for filters -> hydrate full records.
+
         const conditions: string[] = [];
-        
+
         if (params.status) {
-          // COQL uses 'in' (lowercase) operator
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
           conditions.push(`Status in (${statusFilter})`);
         }
-        
+
         if (params.providerId) {
           conditions.push(`Provider_Name = '${params.providerId}'`);
         }
-        
+
         if (params.superbiaCompany) {
           const companies = Array.isArray(params.superbiaCompany)
             ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
             : `'${params.superbiaCompany}'`;
           conditions.push(`Superbia_Company in (${companies})`);
         }
-        
+
         if (params.dateFrom) {
           conditions.push(`Calculation_Date >= '${params.dateFrom}'`);
         }
-        
+
         if (params.dateTo) {
           conditions.push(`Calculation_Date <= '${params.dateTo}'`);
         }
 
         if (conditions.length > 0) {
-          const query = `select ${fields} from Expectations where ${conditions.join(" and ")}`;
+          const query = `select id from Expectations where ${conditions.join(" and ")}`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Expectations", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Expectations", { fields });
+          result = await fetchAllRecords(accessToken, "Expectations");
         }
         break;
       }
