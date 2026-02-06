@@ -153,9 +153,8 @@ export function useZohoData(): UseZohoDataReturn {
       const expectationsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getExpectations' } 
       });
-      if (expectationsRes.error) throw new Error(`Expectations: ${expectationsRes.error.message}`);
-      if (!expectationsRes.data?.success) throw new Error(`Expectations: ${expectationsRes.data?.error || 'Unknown error'}`);
-      const zohoExpectations: ZohoExpectation[] = expectationsRes.data?.data || [];
+      const zohoExpectations: ZohoExpectation[] = checkRateLimit(expectationsRes, 'Expectations');
+      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
       console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
 
       // DEBUG: Verify raw keys + expected amount presence
