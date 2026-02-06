@@ -327,16 +327,20 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   const getToleranceLabel = (tol: number) => {
     if (tol === 0) return 'Exact';
-    if (tol <= 0.5) return 'Tight';
-    if (tol <= 2) return 'Normal';
-    return 'Loose';
+    if (tol <= 1) return 'Tight';
+    if (tol <= 5) return 'Normal';
+    if (tol <= 10) return 'Flexible';
+    if (tol <= 25) return 'Loose';
+    return 'Any';
   };
   
   const getToleranceColor = (tol: number) => {
     if (tol === 0) return 'bg-success/10 text-success border-success/30';
-    if (tol <= 0.5) return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
-    if (tol <= 2) return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
-    return 'bg-orange-500/10 text-orange-600 border-orange-500/30';
+    if (tol <= 1) return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+    if (tol <= 5) return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
+    if (tol <= 10) return 'bg-orange-500/10 text-orange-600 border-orange-500/30';
+    if (tol <= 25) return 'bg-rose-500/10 text-rose-600 border-rose-500/30';
+    return 'bg-destructive/10 text-destructive border-destructive/30';
   };
   
   return (
