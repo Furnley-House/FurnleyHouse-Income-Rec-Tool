@@ -331,7 +331,8 @@ serve(async (req) => {
       case "getPayments": {
         // Fetch Bank_Payments with optional status filter
         // Field name is Payment_Provider (lookup) not Provider_Name
-        const fields = "Payment_ID,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
+        // Note: Zoho COQL requires valid API field names; "id" is the record identifier.
+        const fields = "id,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
         
         if (params.status) {
           // Use COQL for filtering - COQL uses 'in' (lowercase) operator
@@ -350,7 +351,8 @@ serve(async (req) => {
 
       case "getPaymentLineItems": {
         // Fetch Bank_Payment_Lines with optional status filter
-        const fields = "Line_Item_ID,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
+        // Note: "id" is the record identifier.
+        const fields = "id,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
         
         if (params.paymentId) {
           const query = `select ${fields} from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
@@ -372,7 +374,8 @@ serve(async (req) => {
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
         // Provider is the lookup field to Providers module (returns {name, id})
-        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
+        // Note: "id" is the record identifier.
+        const fields = "id,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
         
         const conditions: string[] = [];
         
@@ -422,10 +425,11 @@ serve(async (req) => {
 
       case "getMatches": {
         // Fetch Payment_Matches
-        const fields = "Payment_Match_ID,Bank_Payment_Ref_Match,Payment_Line_Match,Expectation,Matched_Amount,Variance,Variance_Percentage,Match_Type,Match_Method,Match_Quality,Notes,Matched_By,Matched_At,Confirmed";
+        // Note: "id" is the record identifier.
+        const fields = "id,Bank_Payment_Ref_Match,Payment_Line_Match,Expectation,Matched_Amount,Variance,Variance_Percentage,Match_Type,Match_Method,Match_Quality,Notes,Matched_By,Matched_At,Confirmed";
         
         if (params.paymentId) {
-          const query = `SELECT ${fields} FROM Payment_Matches WHERE Bank_Payment_Ref_Match = '${params.paymentId}'`;
+          const query = `select ${fields} from Payment_Matches where Bank_Payment_Ref_Match = '${params.paymentId}'`;
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Payment_Matches", { fields });
