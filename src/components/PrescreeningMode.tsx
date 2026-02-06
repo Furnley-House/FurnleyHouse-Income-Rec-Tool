@@ -49,7 +49,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   const [isRunning, setIsRunning] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const toleranceSteps = [0, 0.5, 1, 2, 5];
+  const toleranceSteps = [0, 1, 5, 10, 25, Infinity]; // Infinity = "Any" tolerance
   
   if (!payment) return null;
   
