@@ -608,7 +608,11 @@ serve(async (req) => {
           const ids = hits.map((r) => String(r.id)).filter(Boolean);
           result = await hydrateRecordsById(accessToken, "Expectations", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Expectations");
+          // Some Zoho orgs require the `fields` parameter for module list endpoints.
+          // Fetch only the fields we need for reconciliation to keep payloads small.
+          const fields =
+            "id,Plan_Policy_Reference,Client_1,Expected_Fee_Amount,Calculation_Date,Fee_Category,Fee_Type,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
+          result = await fetchAllRecords(accessToken, "Expectations", { fields });
         }
         break;
       }
