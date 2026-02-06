@@ -49,9 +49,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   const [isRunning, setIsRunning] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const toleranceSteps = [0, 0.5, 1, 2, 5];
-  
-  if (!payment) return null;
+  const toleranceSteps = [0, 1, 5, 10, 25, Infinity]; // Infinity = "Any" tolerance
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -151,8 +149,9 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     return matches;
   };
   
-  // Filter matches by tolerance level
+  // Filter matches by tolerance level (Infinity means accept all)
   const filterMatchesByTolerance = (allMatches: PendingMatch[], tolerancePercent: number): PendingMatch[] => {
+    if (tolerancePercent === Infinity) return allMatches;
     return allMatches.filter(m => Math.abs(m.variancePercentage) <= tolerancePercent);
   };
   
@@ -213,11 +212,14 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   // Preview counts for each tolerance level
   const tolerancePreview = useMemo(() => {
+    if (!payment) return toleranceSteps.map(tol => ({ tolerance: tol, matchCount: 0 }));
     return toleranceSteps.map(tol => ({
       tolerance: tol,
       matchCount: calculateMatchesAtTolerance(tol).length
     }));
-  }, [payment.lineItems, expectations, pendingMatches]);
+  }, [payment?.lineItems, expectations, pendingMatches]);
+  
+  if (!payment) return null;
   
   const totalItems = payment.lineItems.length;
   const processedItems = payment.lineItems.filter(li => 
@@ -327,16 +329,20 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   const getToleranceLabel = (tol: number) => {
     if (tol === 0) return 'Exact';
-    if (tol <= 0.5) return 'Tight';
-    if (tol <= 2) return 'Normal';
-    return 'Loose';
+    if (tol <= 1) return 'Tight';
+    if (tol <= 5) return 'Normal';
+    if (tol <= 10) return 'Flexible';
+    if (tol <= 25) return 'Loose';
+    return 'Any';
   };
   
   const getToleranceColor = (tol: number) => {
     if (tol === 0) return 'bg-success/10 text-success border-success/30';
-    if (tol <= 0.5) return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
-    if (tol <= 2) return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
-    return 'bg-orange-500/10 text-orange-600 border-orange-500/30';
+    if (tol <= 1) return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+    if (tol <= 5) return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
+    if (tol <= 10) return 'bg-orange-500/10 text-orange-600 border-orange-500/30';
+    if (tol <= 25) return 'bg-rose-500/10 text-rose-600 border-rose-500/30';
+    return 'bg-destructive/10 text-destructive border-destructive/30';
   };
   
   return (
@@ -415,7 +421,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
                         <Circle className="h-4 w-4 text-muted-foreground/40" />
                       )}
                       <span className="font-medium text-sm">
-                        {tol === 0 ? 'Exact Match' : `${tol}% Tolerance`}
+                        {tol === 0 ? 'Exact Match' : tol === Infinity ? 'Any Variance' : `${tol}% Tolerance`}
                       </span>
                     </div>
                     <Badge variant="outline" className={cn("text-xs h-5", getToleranceColor(tol))}>
@@ -446,7 +452,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
                 className="w-full gap-2"
               >
                 <Play className="h-4 w-4" />
-                Run {toleranceSteps[currentToleranceStep] === 0 ? 'Exact' : `${toleranceSteps[currentToleranceStep]}%`} Pass
+                Run {toleranceSteps[currentToleranceStep] === 0 ? 'Exact' : toleranceSteps[currentToleranceStep] === Infinity ? 'Any' : `${toleranceSteps[currentToleranceStep]}%`} Pass
               </Button>
             )}
             
