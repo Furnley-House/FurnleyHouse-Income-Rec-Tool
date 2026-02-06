@@ -131,9 +131,8 @@ export function useZohoData(): UseZohoDataReturn {
       const paymentsRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getPayments' } 
       });
-      if (paymentsRes.error) throw new Error(`Payments: ${paymentsRes.error.message}`);
-      if (!paymentsRes.data?.success) throw new Error(`Payments: ${paymentsRes.data?.error || 'Unknown error'}`);
-      const zohoPayments: ZohoPayment[] = paymentsRes.data?.data || [];
+      const zohoPayments: ZohoPayment[] = checkRateLimit(paymentsRes, 'Payments');
+      console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       
       await delay(500);
