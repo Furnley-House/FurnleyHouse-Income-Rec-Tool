@@ -298,6 +298,64 @@ async function queryWithCOQL(
   return data.data || [];
 }
 
+async function fetchRecordById(
+  accessToken: string,
+  module: string,
+  recordId: string
+): Promise<ZohoRecord | null> {
+  const apiDomain = "https://www.zohoapis.eu";
+  const url = `${apiDomain}/crm/v6/${module}/${recordId}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  const payload: ZohoListResponse = await response.json();
+
+  if (payload.status === "error" || payload.code) {
+    // NODATA is not an error - just means no result
+    if (payload.code === "NODATA") return null;
+    throw new Error(`Zoho API error: ${payload.message || payload.code}`);
+  }
+
+  const apiErr = extractZohoApiError(payload);
+  if (apiErr) throw new Error(`Zoho API error: ${apiErr}`);
+
+  return payload.data?.[0] || null;
+}
+
+async function hydrateRecordsById(
+  accessToken: string,
+  module: string,
+  ids: string[],
+  options: { delayMs?: number; maxRecords?: number } = {}
+): Promise<ZohoRecord[]> {
+  const delayMs = options.delayMs ?? 120;
+  const maxRecords = options.maxRecords ?? 2000;
+
+  const limitedIds = ids.slice(0, maxRecords);
+  const records: ZohoRecord[] = [];
+
+  for (let i = 0; i < limitedIds.length; i++) {
+    const recordId = limitedIds[i];
+    const record = await fetchRecordById(accessToken, module, recordId);
+    if (record) records.push(record);
+
+    // Small delay to reduce rate-limit risk
+    if (delayMs > 0 && i < limitedIds.length - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return records;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
