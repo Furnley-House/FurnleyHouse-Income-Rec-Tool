@@ -151,8 +151,9 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     return matches;
   };
   
-  // Filter matches by tolerance level
+  // Filter matches by tolerance level (Infinity means accept all)
   const filterMatchesByTolerance = (allMatches: PendingMatch[], tolerancePercent: number): PendingMatch[] => {
+    if (tolerancePercent === Infinity) return allMatches;
     return allMatches.filter(m => Math.abs(m.variancePercentage) <= tolerancePercent);
   };
   
