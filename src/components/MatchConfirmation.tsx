@@ -349,18 +349,18 @@ export function MatchConfirmation() {
           </div>
           
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isSyncing}>
+            <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
             <Button 
               onClick={handleConfirm} 
               className="gap-2"
-              disabled={(hasOutOfTolerance && !notes.trim()) || isSyncing}
+              disabled={(hasOutOfTolerance && !notes.trim()) || isSaving}
             >
-              {isSyncing ? (
+              {isSaving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Syncing to Zoho...
+                  Saving...
                 </>
               ) : (
                 <>
