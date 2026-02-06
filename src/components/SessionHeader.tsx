@@ -137,19 +137,21 @@ export function SessionHeader() {
         <div className="flex items-center gap-4">
           {/* Zoho Data Status & Refresh */}
           <Button
-            variant="outline"
+            variant={countdown ? "destructive" : "outline"}
             size="sm"
             onClick={handleRefreshData}
-            disabled={isLoading}
+            disabled={isLoading || (countdown !== null && countdown > 0)}
             className="gap-2"
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
+            ) : countdown ? (
+              <Clock className="h-4 w-4" />
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            <Cloud className="h-4 w-4 text-primary" />
-            {hasData ? 'Refresh' : 'Load Data'}
+            <Cloud className="h-4 w-4" />
+            {countdown ? `Retry in ${countdown}s` : hasData ? 'Refresh' : 'Load Data'}
           </Button>
           
           {/* Overall Progress */}
