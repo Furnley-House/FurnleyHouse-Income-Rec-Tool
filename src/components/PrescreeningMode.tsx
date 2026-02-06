@@ -51,8 +51,6 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
   
   const toleranceSteps = [0, 1, 5, 10, 25, Infinity]; // Infinity = "Any" tolerance
   
-  if (!payment) return null;
-  
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
