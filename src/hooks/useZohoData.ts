@@ -305,15 +305,23 @@ export function useZohoData(): UseZohoDataReturn {
     console.log(`[Zoho] Sample expectations:`, sampleCalcDates);
 
     return { payments, expectations };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
-      console.error('[Zoho] Error:', message);
-      setError(message);
+    } catch (err: any) {
+      // Check if this is a rate limit error
+      if (err?.isRateLimit) {
+        console.warn('[Zoho] Rate limited:', err.message);
+        setIsRateLimited(true);
+        setRetryAfterSeconds(err.retryAfterSeconds);
+        setError(err.message);
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
+        console.error('[Zoho] Error:', message);
+        setError(message);
+      }
       return null;
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  return { isLoading, error, loadZohoData };
+  return { isLoading, error, isRateLimited, retryAfterSeconds, loadZohoData };
 }
