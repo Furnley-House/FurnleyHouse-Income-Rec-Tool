@@ -69,12 +69,22 @@ interface ZohoProvider {
   Provider_Group?: string;
 }
 
+interface LoadResult {
+  payments: Payment[];
+  expectations: Expectation[];
+}
+
+interface RateLimitInfo {
+  isRateLimited: boolean;
+  retryAfterSeconds: number;
+}
+
 interface UseZohoDataReturn {
   isLoading: boolean;
   error: string | null;
   isRateLimited: boolean;
   retryAfterSeconds: number | null;
-  loadZohoData: () => Promise<{ payments: Payment[]; expectations: Expectation[] } | null>;
+  loadZohoData: () => Promise<{ data: LoadResult | null; rateLimitInfo?: RateLimitInfo }>;
 }
 
 // Helper to add delay between API calls
