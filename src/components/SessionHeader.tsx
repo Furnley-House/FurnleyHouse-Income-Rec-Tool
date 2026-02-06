@@ -77,21 +77,24 @@ export function SessionHeader() {
     
     setLoadingState(true);
     toast.info('Loading data from Zoho CRM...');
-    const data = await loadZohoData();
-    if (data) {
-      setZohoData(data.payments, data.expectations);
-      toast.success(`Loaded ${data.payments.length} payments and ${data.expectations.length} expectations from Zoho`);
+    const result = await loadZohoData();
+    
+    // Handle rate limiting immediately
+    if (result.rateLimitInfo?.isRateLimited) {
+      setCountdown(result.rateLimitInfo.retryAfterSeconds);
+      toast.error(`Zoho API rate limited. Please wait ${result.rateLimitInfo.retryAfterSeconds} seconds.`);
+      setLoadingState(false, 'Rate limited');
+      return;
+    }
+    
+    if (result.data) {
+      setZohoData(result.data.payments, result.data.expectations);
+      toast.success(`Loaded ${result.data.payments.length} payments and ${result.data.expectations.length} expectations from Zoho`);
     } else {
       setLoadingState(false, 'Failed to load Zoho data');
+      toast.error('Failed to load data from Zoho CRM');
     }
   };
-  
-  // Start countdown when rate limit is detected
-  useEffect(() => {
-    if (isRateLimited && retryAfterSeconds && retryAfterSeconds > 0) {
-      toast.error(`Zoho API rate limited. Please wait ${retryAfterSeconds} seconds.`);
-    }
-  }, [isRateLimited, retryAfterSeconds]);
   
   const isLoading = isLoadingData || isZohoLoading;
   const hasData = payments.length > 0;

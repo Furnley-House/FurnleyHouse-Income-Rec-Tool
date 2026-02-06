@@ -314,7 +314,7 @@ export function useZohoData(): UseZohoDataReturn {
     const sampleCalcDates = expectations.slice(0, 5).map(e => ({ client: e.clientName, date: e.calculationDate, provider: e.providerName }));
     console.log(`[Zoho] Sample expectations:`, sampleCalcDates);
 
-    return { payments, expectations };
+    return { data: { payments, expectations } };
     } catch (err: any) {
       // Check if this is a rate limit error
       if (err?.isRateLimit) {
@@ -322,12 +322,19 @@ export function useZohoData(): UseZohoDataReturn {
         setIsRateLimited(true);
         setRetryAfterSeconds(err.retryAfterSeconds);
         setError(err.message);
+        return { 
+          data: null, 
+          rateLimitInfo: { 
+            isRateLimited: true, 
+            retryAfterSeconds: err.retryAfterSeconds 
+          } 
+        };
       } else {
         const message = err instanceof Error ? err.message : 'Failed to load Zoho data';
         console.error('[Zoho] Error:', message);
         setError(message);
       }
-      return null;
+      return { data: null };
     } finally {
       setIsLoading(false);
     }
