@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
-import { useZohoSync } from '@/hooks/useZohoSync';
+import { useCachedData } from '@/hooks/useCachedData';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -22,10 +22,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function MatchConfirmation() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [notes, setNotes] = useState('');
   
   const { 
@@ -38,7 +39,7 @@ export function MatchConfirmation() {
     tolerance
   } = useReconciliationStore();
   
-  const { syncMatches, syncPaymentStatus } = useZohoSync();
+  const { savePendingMatch, updateLineItemStatus, updateExpectationStatus, updatePaymentStatus } = useCachedData();
   
   const payment = getSelectedPayment();
   const summary = getPendingMatchSummary();
