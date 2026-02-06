@@ -80,6 +80,65 @@ interface ZohoListResponse {
   message?: string;
 }
 
+interface ZohoField {
+  api_name: string;
+  field_label?: string;
+}
+
+interface ZohoFieldsResponse {
+  fields?: ZohoField[];
+  data?: ZohoField[];
+}
+
+const moduleFieldsCache = new Map<string, { fetchedAt: number; fields: ZohoField[] }>();
+const MODULE_FIELDS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+async function getModuleFields(accessToken: string, module: string): Promise<ZohoField[]> {
+  const cached = moduleFieldsCache.get(module);
+  const now = Date.now();
+
+  if (cached && now - cached.fetchedAt < MODULE_FIELDS_CACHE_TTL_MS) {
+    return cached.fields;
+  }
+
+  const apiDomain = "https://www.zohoapis.eu";
+  const url = `${apiDomain}/crm/v6/settings/fields?module=${encodeURIComponent(module)}`;
+
+  console.log(`[Zoho] Loading field metadata for module: ${module}`);
+
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  const payload: ZohoFieldsResponse & { status?: string; code?: string; message?: string } = await response.json();
+
+  if ((payload as any)?.status === "error" || (payload as any)?.code) {
+    throw new Error(`Zoho API error: ${(payload as any)?.message || (payload as any)?.code}`);
+  }
+
+  const fields = payload.fields || payload.data || [];
+  moduleFieldsCache.set(module, { fetchedAt: now, fields });
+  return fields;
+}
+
+function resolveFieldApiName(fields: ZohoField[], candidates: string[]): string | null {
+  const normalizedCandidates = candidates.map((c) => c.toLowerCase());
+
+  const byApi = fields.find((f) => normalizedCandidates.includes((f.api_name || "").toLowerCase()));
+  if (byApi?.api_name) return byApi.api_name;
+
+  const byLabel = fields.find((f) => normalizedCandidates.includes((f.field_label || "").toLowerCase()));
+  if (byLabel?.api_name) return byLabel.api_name;
+
+  return null;
+}
+
 // Get a valid access token, refreshing if necessary
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
