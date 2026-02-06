@@ -72,6 +72,8 @@ interface ZohoProvider {
 interface UseZohoDataReturn {
   isLoading: boolean;
   error: string | null;
+  isRateLimited: boolean;
+  retryAfterSeconds: number | null;
   loadZohoData: () => Promise<{ payments: Payment[]; expectations: Expectation[] } | null>;
 }
 
