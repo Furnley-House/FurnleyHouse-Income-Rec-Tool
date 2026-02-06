@@ -165,15 +165,14 @@ export function useZohoData(): UseZohoDataReturn {
       
       await delay(500);
       
-      // 4. Fetch expectations - filter by status if unmatchedOnly
-      console.log(`[Zoho] Loading expectations (unmatchedOnly: ${unmatchedOnly})...`);
+      // 4. Fetch expectations - fetch ALL because status field may be blank in Zoho
+      // We'll filter client-side after loading
+      console.log(`[Zoho] Loading expectations (fetching all, will filter client-side)...`);
       const expectationsBody: Record<string, unknown> = { action: 'getExpectations' };
-      if (unmatchedOnly) {
-        expectationsBody.params = { status: ['unmatched', 'partial'] };
-      }
+      // Don't pass status filter - the field may be blank/null in Zoho which causes 0 results
       const expectationsRes = await supabase.functions.invoke('zoho-crm', { body: expectationsBody });
       const zohoExpectations: ZohoExpectation[] = checkRateLimit(expectationsRes, 'Expectations');
-      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations`);
+      console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations (raw)`);
 
       // DEBUG: Verify raw keys + expected amount presence
       if (zohoExpectations[0]) {
