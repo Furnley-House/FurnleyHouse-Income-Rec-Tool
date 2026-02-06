@@ -100,17 +100,14 @@ export function MatchConfirmation() {
   const handleConfirm = async () => {
     if (!payment) return;
     
-    setIsSyncing(true);
+    setIsSaving(true);
     
     try {
-      // First, confirm matches locally
+      // First, confirm matches locally in the store
       confirmPendingMatches(notes);
       
-      // Sync matches to Zoho
-      const matchSyncData = pendingMatches.map(pm => {
-        const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
-        const expectation = expectations.find(e => e.id === pm.expectationId);
-        
+      // Save each match to the local cache (pending sync to Zoho)
+      for (const pm of pendingMatches) {
         // Determine match quality based on variance
         let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
         const absVariance = Math.abs(pm.variancePercentage);
@@ -118,26 +115,26 @@ export function MatchConfirmation() {
         else if (absVariance <= 2) matchQuality = 'good';
         else if (absVariance <= tolerance) matchQuality = 'acceptable';
         
-        return {
+        // Save to pending_matches table (will be synced to Zoho later)
+        await savePendingMatch({
           paymentId: payment.id,
-          paymentZohoId: payment.zohoId || payment.id,
           lineItemId: pm.lineItemId,
-          lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
           expectationId: pm.expectationId,
-          expectationZohoId: expectation?.zohoId || pm.expectationId,
           matchedAmount: pm.lineItemAmount,
           variance: pm.variance,
           variancePercentage: pm.variancePercentage,
-          matchType: 'full' as const,
-          matchMethod: 'manual' as const,
           matchQuality,
-          notes: notes,
-        };
-      });
+          notes,
+        });
+        
+        // Update cached line item status
+        await updateLineItemStatus(pm.lineItemId, 'matched', pm.expectationId, notes);
+        
+        // Update cached expectation status
+        await updateExpectationStatus(pm.expectationId, 'matched', pm.lineItemAmount);
+      }
       
-      await syncMatches(matchSyncData);
-      
-      // Update payment status in Zoho
+      // Update cached payment status
       const newReconciledAmount = payment.reconciledAmount + summary.totalLineItemAmount;
       const newRemainingAmount = payment.amount - newReconciledAmount;
       const allMatched = payment.lineItems.every(li => 
@@ -145,15 +142,14 @@ export function MatchConfirmation() {
       );
       const newStatus = allMatched ? 'reconciled' : 'in_progress';
       
-      await syncPaymentStatus(
-        payment.zohoId || payment.id,
-        newStatus,
-        newReconciledAmount,
-        newRemainingAmount,
-        notes
-      );
+      await updatePaymentStatus(payment.id, newStatus, newReconciledAmount, newRemainingAmount);
+      
+      toast.success(`Saved ${pendingMatches.length} match(es) locally. Click "Sync" to push to Zoho.`);
+    } catch (error) {
+      console.error('[MatchConfirmation] Error saving matches:', error);
+      toast.error('Failed to save matches');
     } finally {
-      setIsSyncing(false);
+      setIsSaving(false);
     }
     
     setNotes('');
