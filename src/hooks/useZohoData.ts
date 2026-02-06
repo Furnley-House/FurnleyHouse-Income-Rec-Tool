@@ -100,7 +100,8 @@ export function useZohoData(): UseZohoDataReturn {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
 
-  const loadZohoData = useCallback(async () => {
+  const loadZohoData = useCallback(async (options: FetchOptions = {}) => {
+    const { unmatchedOnly = true } = options; // Default to only fetching unmatched data
     setIsLoading(true);
     setError(null);
     setIsRateLimited(false);
