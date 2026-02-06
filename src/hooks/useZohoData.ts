@@ -10,7 +10,7 @@ interface ZohoPayment {
   Bank_Reference?: string;
   Payment_Date?: string;
   Amount?: unknown;
-  Payment_Provider?: { name: string; id: string }; // Correct Zoho field name
+  Payment_Provider?: { name: string; id: string };
   Status?: string;
   Reconciled_Amount?: unknown;
   Remaining_Amount?: unknown;
@@ -40,7 +40,6 @@ interface ZohoExpectation {
   Calculation_Date?: string;
   Fee_Category?: string;
   Fee_Type?: string;
-  // Provider is a lookup field to Providers module (returns {name, id})
   Provider?: { name: string; id: string };
   Adviser_Name?: string;
   Superbia_Company?: string;
@@ -79,12 +78,17 @@ interface RateLimitInfo {
   retryAfterSeconds: number;
 }
 
+export interface FetchOptions {
+  /** Only fetch unmatched/partial records (for incremental sync) */
+  unmatchedOnly?: boolean;
+}
+
 interface UseZohoDataReturn {
   isLoading: boolean;
   error: string | null;
   isRateLimited: boolean;
   retryAfterSeconds: number | null;
-  loadZohoData: () => Promise<{ data: LoadResult | null; rateLimitInfo?: RateLimitInfo }>;
+  loadZohoData: (options?: FetchOptions) => Promise<{ data: LoadResult | null; rateLimitInfo?: RateLimitInfo }>;
 }
 
 // Helper to add delay between API calls
