@@ -14,7 +14,258 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cached_expectations: {
+        Row: {
+          adviser_name: string | null
+          allocated_amount: number
+          cached_at: string
+          calculation_date: string | null
+          client_name: string | null
+          expected_amount: number
+          fee_category: string | null
+          id: string
+          plan_reference: string | null
+          provider_name: string
+          remaining_amount: number
+          status: string
+          updated_at: string
+          zoho_record_id: string | null
+        }
+        Insert: {
+          adviser_name?: string | null
+          allocated_amount?: number
+          cached_at?: string
+          calculation_date?: string | null
+          client_name?: string | null
+          expected_amount?: number
+          fee_category?: string | null
+          id: string
+          plan_reference?: string | null
+          provider_name: string
+          remaining_amount?: number
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Update: {
+          adviser_name?: string | null
+          allocated_amount?: number
+          cached_at?: string
+          calculation_date?: string | null
+          client_name?: string | null
+          expected_amount?: number
+          fee_category?: string | null
+          id?: string
+          plan_reference?: string | null
+          provider_name?: string
+          remaining_amount?: number
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Relationships: []
+      }
+      cached_line_items: {
+        Row: {
+          adviser_name: string | null
+          amount: number
+          cached_at: string
+          client_name: string | null
+          fee_category: string | null
+          id: string
+          match_notes: string | null
+          matched_expectation_id: string | null
+          payment_id: string
+          plan_reference: string | null
+          status: string
+          updated_at: string
+          zoho_record_id: string | null
+        }
+        Insert: {
+          adviser_name?: string | null
+          amount?: number
+          cached_at?: string
+          client_name?: string | null
+          fee_category?: string | null
+          id: string
+          match_notes?: string | null
+          matched_expectation_id?: string | null
+          payment_id: string
+          plan_reference?: string | null
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Update: {
+          adviser_name?: string | null
+          amount?: number
+          cached_at?: string
+          client_name?: string | null
+          fee_category?: string | null
+          id?: string
+          match_notes?: string | null
+          matched_expectation_id?: string | null
+          payment_id?: string
+          plan_reference?: string | null
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cached_line_items_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "cached_payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cached_payments: {
+        Row: {
+          amount: number
+          cached_at: string
+          id: string
+          notes: string | null
+          payment_date: string | null
+          payment_reference: string | null
+          period_end: string | null
+          period_start: string | null
+          provider_name: string
+          reconciled_amount: number
+          remaining_amount: number
+          status: string
+          updated_at: string
+          zoho_record_id: string | null
+        }
+        Insert: {
+          amount?: number
+          cached_at?: string
+          id: string
+          notes?: string | null
+          payment_date?: string | null
+          payment_reference?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          provider_name: string
+          reconciled_amount?: number
+          remaining_amount?: number
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Update: {
+          amount?: number
+          cached_at?: string
+          id?: string
+          notes?: string | null
+          payment_date?: string | null
+          payment_reference?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          provider_name?: string
+          reconciled_amount?: number
+          remaining_amount?: number
+          status?: string
+          updated_at?: string
+          zoho_record_id?: string | null
+        }
+        Relationships: []
+      }
+      pending_matches: {
+        Row: {
+          expectation_id: string
+          id: string
+          line_item_id: string
+          match_quality: string | null
+          matched_amount: number
+          matched_at: string
+          notes: string | null
+          payment_id: string
+          synced_at: string | null
+          synced_to_zoho: boolean
+          variance: number
+          variance_percentage: number
+        }
+        Insert: {
+          expectation_id: string
+          id?: string
+          line_item_id: string
+          match_quality?: string | null
+          matched_amount: number
+          matched_at?: string
+          notes?: string | null
+          payment_id: string
+          synced_at?: string | null
+          synced_to_zoho?: boolean
+          variance?: number
+          variance_percentage?: number
+        }
+        Update: {
+          expectation_id?: string
+          id?: string
+          line_item_id?: string
+          match_quality?: string | null
+          matched_amount?: number
+          matched_at?: string
+          notes?: string | null
+          payment_id?: string
+          synced_at?: string | null
+          synced_to_zoho?: boolean
+          variance?: number
+          variance_percentage?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_matches_expectation_id_fkey"
+            columns: ["expectation_id"]
+            isOneToOne: false
+            referencedRelation: "cached_expectations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_matches_line_item_id_fkey"
+            columns: ["line_item_id"]
+            isOneToOne: false
+            referencedRelation: "cached_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_matches_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "cached_payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_status: {
+        Row: {
+          id: string
+          is_locked: boolean
+          last_download_at: string | null
+          last_sync_at: string | null
+          lock_reason: string | null
+          pending_match_count: number
+        }
+        Insert: {
+          id?: string
+          is_locked?: boolean
+          last_download_at?: string | null
+          last_sync_at?: string | null
+          lock_reason?: string | null
+          pending_match_count?: number
+        }
+        Update: {
+          id?: string
+          is_locked?: boolean
+          last_download_at?: string | null
+          last_sync_at?: string | null
+          lock_reason?: string | null
+          pending_match_count?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
