@@ -98,14 +98,30 @@ export function useZohoData(): UseZohoDataReturn {
       
       console.log('[Zoho] Starting sequential data load to avoid rate limits...');
       
+      // Helper to check for rate limit errors in response
+      const checkRateLimit = (res: any, context: string) => {
+        if (res.error) throw new Error(`${context}: ${res.error.message}`);
+        if (!res.data?.success) {
+          // Check for rate limit error
+          if (res.data?.code === 'ZOHO_RATE_LIMIT') {
+            const retrySeconds = res.data?.retryAfterSeconds || 60;
+            throw { 
+              isRateLimit: true, 
+              retryAfterSeconds: retrySeconds,
+              message: `Zoho API rate limited. Please wait ${retrySeconds} seconds before retrying.`
+            };
+          }
+          throw new Error(`${context}: ${res.data?.error || 'Unknown error'}`);
+        }
+        return res.data?.data || [];
+      };
+
       // 1. Fetch providers first (smallest dataset, needed for mapping)
       console.log('[Zoho] Loading providers...');
       const providersRes = await supabase.functions.invoke('zoho-crm', { 
         body: { action: 'getProviders' } 
       });
-      if (providersRes.error) throw new Error(`Providers: ${providersRes.error.message}`);
-      if (!providersRes.data?.success) throw new Error(`Providers: ${providersRes.data?.error || 'Unknown error'}`);
-      const zohoProviders: ZohoProvider[] = providersRes.data?.data || [];
+      const zohoProviders: ZohoProvider[] = checkRateLimit(providersRes, 'Providers');
       console.log(`[Zoho] Loaded ${zohoProviders.length} providers`);
       
       await delay(500); // 500ms delay between calls
