@@ -334,11 +334,13 @@ serve(async (req) => {
         const fields = "Payment_ID,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
         
         if (params.status) {
-          // Use COQL for filtering
+          // Use COQL for filtering - COQL uses 'in' (lowercase) operator
+          // Format: Status in ('value1', 'value2')
           const statusFilter = Array.isArray(params.status) 
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `SELECT ${fields} FROM Bank_Payments WHERE Status IN (${statusFilter})`;
+          const query = `select ${fields} from Bank_Payments where Status in (${statusFilter})`;
+          console.log("[Zoho] COQL query:", query);
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Bank_Payments", { fields });
@@ -351,14 +353,15 @@ serve(async (req) => {
         const fields = "Line_Item_ID,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
         
         if (params.paymentId) {
-          const query = `SELECT ${fields} FROM Bank_Payment_Lines WHERE Bank_Payment = '${params.paymentId}'`;
+          const query = `select ${fields} from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
           result = await queryWithCOQL(accessToken, query);
         } else if (params.status) {
-          // Filter by status
+          // Filter by status - COQL uses 'in' (lowercase) operator
           const statusFilter = Array.isArray(params.status) 
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `SELECT ${fields} FROM Bank_Payment_Lines WHERE Status IN (${statusFilter})`;
+          const query = `select ${fields} from Bank_Payment_Lines where Status in (${statusFilter})`;
+          console.log("[Zoho] COQL query:", query);
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Bank_Payment_Lines", { fields });
@@ -374,10 +377,11 @@ serve(async (req) => {
         const conditions: string[] = [];
         
         if (params.status) {
+          // COQL uses 'in' (lowercase) operator
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          conditions.push(`Status IN (${statusFilter})`);
+          conditions.push(`Status in (${statusFilter})`);
         }
         
         if (params.providerId) {
@@ -388,7 +392,7 @@ serve(async (req) => {
           const companies = Array.isArray(params.superbiaCompany)
             ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
             : `'${params.superbiaCompany}'`;
-          conditions.push(`Superbia_Company IN (${companies})`);
+          conditions.push(`Superbia_Company in (${companies})`);
         }
         
         if (params.dateFrom) {
@@ -400,7 +404,8 @@ serve(async (req) => {
         }
 
         if (conditions.length > 0) {
-          const query = `SELECT ${fields} FROM Expectations WHERE ${conditions.join(" AND ")}`;
+          const query = `select ${fields} from Expectations where ${conditions.join(" and ")}`;
+          console.log("[Zoho] COQL query:", query);
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Expectations", { fields });
