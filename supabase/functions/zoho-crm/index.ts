@@ -377,10 +377,11 @@ serve(async (req) => {
         const conditions: string[] = [];
         
         if (params.status) {
+          // COQL uses 'in' (lowercase) operator
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          conditions.push(`Status IN (${statusFilter})`);
+          conditions.push(`Status in (${statusFilter})`);
         }
         
         if (params.providerId) {
@@ -391,7 +392,7 @@ serve(async (req) => {
           const companies = Array.isArray(params.superbiaCompany)
             ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
             : `'${params.superbiaCompany}'`;
-          conditions.push(`Superbia_Company IN (${companies})`);
+          conditions.push(`Superbia_Company in (${companies})`);
         }
         
         if (params.dateFrom) {
@@ -403,7 +404,8 @@ serve(async (req) => {
         }
 
         if (conditions.length > 0) {
-          const query = `SELECT ${fields} FROM Expectations WHERE ${conditions.join(" AND ")}`;
+          const query = `select ${fields} from Expectations where ${conditions.join(" and ")}`;
+          console.log("[Zoho] COQL query:", query);
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Expectations", { fields });
