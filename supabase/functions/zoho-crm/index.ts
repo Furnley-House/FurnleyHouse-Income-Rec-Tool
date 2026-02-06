@@ -80,6 +80,65 @@ interface ZohoListResponse {
   message?: string;
 }
 
+interface ZohoField {
+  api_name: string;
+  field_label?: string;
+}
+
+interface ZohoFieldsResponse {
+  fields?: ZohoField[];
+  data?: ZohoField[];
+}
+
+const moduleFieldsCache = new Map<string, { fetchedAt: number; fields: ZohoField[] }>();
+const MODULE_FIELDS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+async function getModuleFields(accessToken: string, module: string): Promise<ZohoField[]> {
+  const cached = moduleFieldsCache.get(module);
+  const now = Date.now();
+
+  if (cached && now - cached.fetchedAt < MODULE_FIELDS_CACHE_TTL_MS) {
+    return cached.fields;
+  }
+
+  const apiDomain = "https://www.zohoapis.eu";
+  const url = `${apiDomain}/crm/v6/settings/fields?module=${encodeURIComponent(module)}`;
+
+  console.log(`[Zoho] Loading field metadata for module: ${module}`);
+
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  const payload: ZohoFieldsResponse & { status?: string; code?: string; message?: string } = await response.json();
+
+  if ((payload as any)?.status === "error" || (payload as any)?.code) {
+    throw new Error(`Zoho API error: ${(payload as any)?.message || (payload as any)?.code}`);
+  }
+
+  const fields = payload.fields || payload.data || [];
+  moduleFieldsCache.set(module, { fetchedAt: now, fields });
+  return fields;
+}
+
+function resolveFieldApiName(fields: ZohoField[], candidates: string[]): string | null {
+  const normalizedCandidates = candidates.map((c) => c.toLowerCase());
+
+  const byApi = fields.find((f) => normalizedCandidates.includes((f.api_name || "").toLowerCase()));
+  if (byApi?.api_name) return byApi.api_name;
+
+  const byLabel = fields.find((f) => normalizedCandidates.includes((f.field_label || "").toLowerCase()));
+  if (byLabel?.api_name) return byLabel.api_name;
+
+  return null;
+}
+
 // Get a valid access token, refreshing if necessary
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
@@ -284,18 +343,105 @@ async function queryWithCOQL(
     body: JSON.stringify({ select_query: query }),
   });
 
-  const data: ZohoListResponse = await response.json();
-  
-  if (data.status === "error" || data.code) {
-    if (data.code === "NODATA") {
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  // Zoho sometimes returns 204 No Content for empty COQL results
+  if (response.status === 204) {
+    console.log("COQL query returned 204 (no content)");
+    return [];
+  }
+
+  const raw = await response.text();
+  if (!raw) {
+    console.error("COQL empty response", {
+      status: response.status,
+      statusText: response.statusText,
+    });
+    throw new Error(`COQL error: empty response (HTTP ${response.status})`);
+  }
+
+  let data: ZohoListResponse;
+  try {
+    data = JSON.parse(raw) as ZohoListResponse;
+  } catch {
+    console.error("COQL non-JSON response", {
+      status: response.status,
+      statusText: response.statusText,
+      bodyPreview: raw.slice(0, 400),
+    });
+    throw new Error(`COQL error: non-JSON response (HTTP ${response.status})`);
+  }
+
+  if ((data as any).status === "error" || (data as any).code) {
+    if ((data as any).code === "NODATA") {
       console.log("COQL query returned no data");
       return [];
     }
     console.error("COQL error:", data);
-    throw new Error(`COQL error: ${data.message || data.code}`);
+    throw new Error(`COQL error: ${(data as any).message || (data as any).code}`);
   }
 
   return data.data || [];
+}
+
+async function fetchRecordById(
+  accessToken: string,
+  module: string,
+  recordId: string
+): Promise<ZohoRecord | null> {
+  const apiDomain = "https://www.zohoapis.eu";
+  const url = `${apiDomain}/crm/v6/${module}/${recordId}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": `Zoho-oauthtoken ${accessToken}`,
+    },
+  });
+
+  if (response.status === 429) {
+    throw new ZohoRateLimitError("Zoho API rate limited", 60);
+  }
+
+  const payload: ZohoListResponse = await response.json();
+
+  if (payload.status === "error" || payload.code) {
+    // NODATA is not an error - just means no result
+    if (payload.code === "NODATA") return null;
+    throw new Error(`Zoho API error: ${payload.message || payload.code}`);
+  }
+
+  const apiErr = extractZohoApiError(payload);
+  if (apiErr) throw new Error(`Zoho API error: ${apiErr}`);
+
+  return payload.data?.[0] || null;
+}
+
+async function hydrateRecordsById(
+  accessToken: string,
+  module: string,
+  ids: string[],
+  options: { delayMs?: number; maxRecords?: number } = {}
+): Promise<ZohoRecord[]> {
+  const delayMs = options.delayMs ?? 120;
+  const maxRecords = options.maxRecords ?? 2000;
+
+  const limitedIds = ids.slice(0, maxRecords);
+  const records: ZohoRecord[] = [];
+
+  for (let i = 0; i < limitedIds.length; i++) {
+    const recordId = limitedIds[i];
+    const record = await fetchRecordById(accessToken, module, recordId);
+    if (record) records.push(record);
+
+    // Small delay to reduce rate-limit risk
+    if (delayMs > 0 && i < limitedIds.length - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return records;
 }
 
 serve(async (req) => {
@@ -330,85 +476,139 @@ serve(async (req) => {
 
       case "getPayments": {
         // Fetch Bank_Payments with optional status filter
-        // Field name is Payment_Provider (lookup) not Provider_Name
-        const fields = "Payment_ID,Payment_Provider,Payment_Reference,Amount,Payment_Date,Bank_Reference,Status,Reconciled_Amount,Remaining_Amount,Notes";
-        
+        // Important: COQL is strict about field API names. We resolve the actual API name for
+        // fields like "Status" first, then hydrate full records by id.
+
         if (params.status) {
-          // Use COQL for filtering - COQL uses 'in' (lowercase) operator
-          // Format: Status in ('value1', 'value2')
-          const statusFilter = Array.isArray(params.status) 
+          const moduleFields = await getModuleFields(accessToken, "Bank_Payments");
+          const statusField = resolveFieldApiName(moduleFields, ["Status"]);
+          if (!statusField) {
+            throw new Error("Could not resolve Bank_Payments status field (expected label/api_name 'Status')");
+          }
+
+          const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `select ${fields} from Bank_Payments where Status in (${statusFilter})`;
+
+          const query = `select id from Bank_Payments where ${statusField} in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payments", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Bank_Payments", { fields });
+          result = await fetchAllRecords(accessToken, "Bank_Payments");
         }
         break;
       }
 
       case "getPaymentLineItems": {
-        // Fetch Bank_Payment_Lines with optional status filter
-        const fields = "Line_Item_ID,Bank_Payment,Client_Name,Plan_Reference,Adviser_Name,Fee_Category,Amount,Description,Status,Matched_Expectation,Match_Notes";
-        
+        // Fetch Bank_Payment_Lines with optional filters
+        // Same approach as payments: resolve field API names for COQL filters -> hydrate full records.
+
+        const moduleFields = await getModuleFields(accessToken, "Bank_Payment_Lines");
+        const statusField = resolveFieldApiName(moduleFields, ["Status"]);
+        const paymentLookupField = resolveFieldApiName(moduleFields, ["Bank_Payment", "Bank Payment"]);
+
         if (params.paymentId) {
-          const query = `select ${fields} from Bank_Payment_Lines where Bank_Payment = '${params.paymentId}'`;
-          result = await queryWithCOQL(accessToken, query);
+          if (!paymentLookupField) {
+            throw new Error("Could not resolve Bank_Payment_Lines payment lookup field (expected label/api_name 'Bank_Payment')");
+          }
+
+          const query = `select id from Bank_Payment_Lines where ${paymentLookupField} = '${params.paymentId}'`;
+          console.log("[Zoho] COQL query:", query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payment_Lines", ids);
         } else if (params.status) {
-          // Filter by status - COQL uses 'in' (lowercase) operator
-          const statusFilter = Array.isArray(params.status) 
+          if (!statusField) {
+            throw new Error("Could not resolve Bank_Payment_Lines status field (expected label/api_name 'Status')");
+          }
+
+          const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          const query = `select ${fields} from Bank_Payment_Lines where Status in (${statusFilter})`;
+
+          const query = `select id from Bank_Payment_Lines where ${statusField} in (${statusFilter})`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Bank_Payment_Lines", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Bank_Payment_Lines", { fields });
+          result = await fetchAllRecords(accessToken, "Bank_Payment_Lines");
         }
         break;
       }
 
       case "getExpectations": {
         // Fetch Expectations with flexible filtering
-        // Provider is the lookup field to Providers module (returns {name, id})
-        const fields = "Expectation_ID,Client_1,Plan_Policy_Reference,Expected_Fee_Amount,Calculation_Date,Fund_Reference,Fee_Category,Fee_Type,Description,Provider,Adviser_Name,Superbia_Company,Status,Allocated_Amount,Remaining_Amount";
-        
+        // Resolve field API names (Zoho can differ per org) -> COQL filter -> hydrate full records.
+
+        const moduleFields = await getModuleFields(accessToken, "Expectations");
+        const statusApi = resolveFieldApiName(moduleFields, ["Status", "Expectation_Status", "Expectation Status"]);
+        const providerApi = resolveFieldApiName(moduleFields, ["Provider", "Provider_Name", "Provider Name"]);
+        const superbiaApi = resolveFieldApiName(moduleFields, ["Superbia_Company", "Superbia Company"]);
+        const calcDateApi = resolveFieldApiName(moduleFields, ["Calculation_Date", "Calculation Date"]);
+
         const conditions: string[] = [];
-        
+
         if (params.status) {
-          // COQL uses 'in' (lowercase) operator
+          if (!statusApi) {
+            throw new Error("Could not resolve Expectations status field (label/api_name like 'Status')");
+          }
+
           const statusFilter = Array.isArray(params.status)
             ? params.status.map((s: string) => `'${s}'`).join(", ")
             : `'${params.status}'`;
-          conditions.push(`Status in (${statusFilter})`);
+          conditions.push(`${statusApi} in (${statusFilter})`);
         }
-        
+
         if (params.providerId) {
-          conditions.push(`Provider_Name = '${params.providerId}'`);
+          if (providerApi) {
+            conditions.push(`${providerApi} = '${params.providerId}'`);
+          } else {
+            console.warn("[Zoho] providerId filter requested but Provider field could not be resolved; skipping filter");
+          }
         }
-        
+
         if (params.superbiaCompany) {
-          const companies = Array.isArray(params.superbiaCompany)
-            ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
-            : `'${params.superbiaCompany}'`;
-          conditions.push(`Superbia_Company in (${companies})`);
+          if (superbiaApi) {
+            const companies = Array.isArray(params.superbiaCompany)
+              ? params.superbiaCompany.map((c: string) => `'${c}'`).join(", ")
+              : `'${params.superbiaCompany}'`;
+            conditions.push(`${superbiaApi} in (${companies})`);
+          } else {
+            console.warn("[Zoho] superbiaCompany filter requested but field could not be resolved; skipping filter");
+          }
         }
-        
+
         if (params.dateFrom) {
-          conditions.push(`Calculation_Date >= '${params.dateFrom}'`);
+          if (calcDateApi) {
+            conditions.push(`${calcDateApi} >= '${params.dateFrom}'`);
+          } else {
+            console.warn("[Zoho] dateFrom filter requested but Calculation Date field could not be resolved; skipping filter");
+          }
         }
-        
+
         if (params.dateTo) {
-          conditions.push(`Calculation_Date <= '${params.dateTo}'`);
+          if (calcDateApi) {
+            conditions.push(`${calcDateApi} <= '${params.dateTo}'`);
+          } else {
+            console.warn("[Zoho] dateTo filter requested but Calculation Date field could not be resolved; skipping filter");
+          }
         }
 
         if (conditions.length > 0) {
-          const query = `select ${fields} from Expectations where ${conditions.join(" and ")}`;
+          const query = `select id from Expectations where ${conditions.join(" and ")}`;
           console.log("[Zoho] COQL query:", query);
-          result = await queryWithCOQL(accessToken, query);
+
+          const hits = await queryWithCOQL(accessToken, query);
+          const ids = hits.map((r) => String(r.id)).filter(Boolean);
+          result = await hydrateRecordsById(accessToken, "Expectations", ids);
         } else {
-          result = await fetchAllRecords(accessToken, "Expectations", { fields });
+          result = await fetchAllRecords(accessToken, "Expectations");
         }
         break;
       }
@@ -422,10 +622,11 @@ serve(async (req) => {
 
       case "getMatches": {
         // Fetch Payment_Matches
-        const fields = "Payment_Match_ID,Bank_Payment_Ref_Match,Payment_Line_Match,Expectation,Matched_Amount,Variance,Variance_Percentage,Match_Type,Match_Method,Match_Quality,Notes,Matched_By,Matched_At,Confirmed";
+        // Note: "id" is the record identifier.
+        const fields = "id,Bank_Payment_Ref_Match,Payment_Line_Match,Expectation,Matched_Amount,Variance,Variance_Percentage,Match_Type,Match_Method,Match_Quality,Notes,Matched_By,Matched_At,Confirmed";
         
         if (params.paymentId) {
-          const query = `SELECT ${fields} FROM Payment_Matches WHERE Bank_Payment_Ref_Match = '${params.paymentId}'`;
+          const query = `select ${fields} from Payment_Matches where Bank_Payment_Ref_Match = '${params.paymentId}'`;
           result = await queryWithCOQL(accessToken, query);
         } else {
           result = await fetchAllRecords(accessToken, "Payment_Matches", { fields });
