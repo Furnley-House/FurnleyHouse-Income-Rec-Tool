@@ -1,14 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SessionHeader } from '@/components/SessionHeader';
 import { PaymentList } from '@/components/PaymentList';
 import { ReconciliationWorkspace } from '@/components/ReconciliationWorkspace';
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { useCachedData } from '@/hooks/useCachedData';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const Index = () => {
-  const { selectedPaymentId } = useReconciliationStore();
+  const { selectedPaymentId, payments, setZohoData, setLoadingState } = useReconciliationStore();
+  const { loadFromCache } = useCachedData();
+  const hasAttemptedRehydration = useRef(false);
+
+  // Auto-rehydrate from cache if store is empty on mount
+  useEffect(() => {
+    if (hasAttemptedRehydration.current || payments.length > 0) return;
+    hasAttemptedRehydration.current = true;
+
+    const rehydrate = async () => {
+      setLoadingState(true);
+      const cached = await loadFromCache();
+      if (cached && cached.payments.length > 0) {
+        setZohoData(cached.payments, cached.expectations);
+        console.log(`[Index] Auto-rehydrated ${cached.payments.length} payments from cache`);
+      } else {
+        setLoadingState(false);
+      }
+    };
+    rehydrate();
+  }, [payments.length, loadFromCache, setZohoData, setLoadingState]);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   
   // Auto-collapse when a payment is selected

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Payment, PaymentLineItem, Expectation, Match, PendingMatch, ReconciliationStatistics, PaymentFilters, ExpectationFilters } from '@/types/reconciliation';
+import { syncMatchConfirmationToCache } from '@/hooks/useCacheSync';
 
 interface ReconciliationStore {
   isLoadingData: boolean;
@@ -281,6 +282,26 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       pendingMatches: [],
       statistics: calculateStatistics(updatedPayments, updatedExpectations, updatedMatches)
     });
+
+    // Fire-and-forget: persist changes to Supabase cache
+    const updatedPayment = updatedPayments.find(p => p.id === selectedPaymentId);
+    if (updatedPayment) {
+      syncMatchConfirmationToCache({
+        paymentId: selectedPaymentId,
+        paymentStatus: updatedPayment.status,
+        reconciledAmount: updatedPayment.reconciledAmount,
+        remainingAmount: updatedPayment.remainingAmount,
+        matchedLineItems: pendingMatches.map(pm => ({
+          id: pm.lineItemId,
+          matchedExpectationId: pm.expectationId,
+          notes,
+        })),
+        matchedExpectations: pendingMatches.map(pm => ({
+          id: pm.expectationId,
+          allocatedAmount: pm.lineItemAmount,
+        })),
+      });
+    }
   },
   
   autoMatchCurrentPayment: () => {
