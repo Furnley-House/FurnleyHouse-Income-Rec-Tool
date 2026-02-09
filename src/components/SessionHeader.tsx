@@ -182,26 +182,38 @@ export function SessionHeader() {
         continue;
       }
       
-      const success = await syncMatch({
-        paymentId: match.paymentId,
-        paymentZohoId: payment.zohoId || payment.id,
-        lineItemId: match.lineItemId,
-        lineItemZohoId: lineItem.zohoId || lineItem.id,
-        expectationId: match.expectationId,
-        expectationZohoId: expectation.zohoId || expectation.id,
-        matchedAmount: match.matchedAmount,
-        variance: match.variance,
-        variancePercentage: match.variancePercentage,
-        matchType: 'full',
-        matchMethod: 'manual',
-        matchQuality: (match.matchQuality as 'perfect' | 'good' | 'acceptable' | 'warning') || 'good',
-        notes: match.notes || '',
-      });
-      
-      if (success) {
-        successCount++;
-        syncedIds.push(match.id);
-      } else {
+      try {
+        const success = await syncMatch({
+          paymentId: match.paymentId,
+          paymentZohoId: payment.zohoId || payment.id,
+          lineItemId: match.lineItemId,
+          lineItemZohoId: lineItem.zohoId || lineItem.id,
+          expectationId: match.expectationId,
+          expectationZohoId: expectation.zohoId || expectation.id,
+          matchedAmount: match.matchedAmount,
+          variance: match.variance,
+          variancePercentage: match.variancePercentage,
+          matchType: 'full',
+          matchMethod: 'manual',
+          matchQuality: (match.matchQuality as 'perfect' | 'good' | 'acceptable' | 'warning') || 'good',
+          notes: match.notes || '',
+        });
+        
+        if (success) {
+          successCount++;
+          syncedIds.push(match.id);
+        } else {
+          failCount++;
+        }
+      } catch (err: any) {
+        if (err?.isRateLimit) {
+          const retrySeconds = err.retryAfterSeconds || 60;
+          setCountdown(retrySeconds);
+          toast.error(`Zoho rate limited after ${successCount} synced. Retry in ${retrySeconds}s.`, {
+            description: `${pending.length - successCount - failCount} matches remaining`,
+          });
+          break;
+        }
         failCount++;
       }
     }

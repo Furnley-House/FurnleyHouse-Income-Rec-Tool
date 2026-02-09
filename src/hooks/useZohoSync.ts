@@ -60,6 +60,13 @@ export function useZohoSync() {
 
       if (!matchResult?.success) {
         console.error('[ZohoSync] Match creation failed:', matchResult);
+        // Propagate rate limit info so callers can stop
+        if (matchResult?.code === 'ZOHO_RATE_LIMIT') {
+          const err = new Error(matchResult?.error || 'Rate limited');
+          (err as any).isRateLimit = true;
+          (err as any).retryAfterSeconds = matchResult?.retryAfterSeconds || 60;
+          throw err;
+        }
         throw new Error(matchResult?.error || 'Failed to create match record');
       }
 
@@ -110,8 +117,9 @@ export function useZohoSync() {
       }
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[ZohoSync] Match sync failed:', error);
+      if (error?.isRateLimit) throw error; // Re-throw rate limits for caller handling
       return false;
     }
   };

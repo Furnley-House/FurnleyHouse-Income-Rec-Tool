@@ -398,14 +398,43 @@ export function useCachedData(): UseCachedDataReturn {
 
   const getPendingMatches = useCallback(async () => {
     try {
-      const { data, error: fetchError } = await supabase
-        .from('pending_matches')
-        .select('*')
-        .eq('synced_to_zoho', false);
+      const result: Array<{
+        id: string;
+        payment_id: string;
+        line_item_id: string;
+        expectation_id: string;
+        matched_amount: number;
+        variance: number;
+        variance_percentage: number;
+        match_quality: string | null;
+        notes: string | null;
+        matched_at: string;
+        synced_to_zoho: boolean;
+      }> = [];
+      let offset = 0;
+      const batchSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error: fetchError } = await supabase
+          .from('pending_matches')
+          .select('*')
+          .eq('synced_to_zoho', false)
+          .range(offset, offset + batchSize - 1);
 
-      if (fetchError) throw new Error(fetchError.message);
+        if (fetchError) throw new Error(fetchError.message);
 
-      return (data || []).map(m => ({
+        if (data && data.length > 0) {
+          result.push(...data);
+          offset += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`[Cache] Fetched ${result.length} pending matches (paginated)`);
+
+      return result.map(m => ({
         id: m.id,
         paymentId: m.payment_id,
         lineItemId: m.line_item_id,
