@@ -53,13 +53,17 @@ export function SessionHeader() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   
-  // Load pending match count on mount
+  // Load pending match count on mount and when matches change
   useEffect(() => {
     const loadPendingCount = async () => {
       const pending = await getPendingMatches();
       setPendingCount(pending?.length || 0);
     };
     loadPendingCount();
+    
+    // Poll every 5s to catch async DB writes from MatchConfirmation
+    const interval = setInterval(loadPendingCount, 5000);
+    return () => clearInterval(interval);
   }, [getPendingMatches, matches]);
   
   // Countdown timer for rate limit
