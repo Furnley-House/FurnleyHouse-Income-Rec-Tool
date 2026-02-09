@@ -451,25 +451,56 @@ async function hydrateRecordsById(
   accessToken: string,
   module: string,
   ids: string[],
-  options: { delayMs?: number; maxRecords?: number } = {}
+  options: { delayMs?: number; maxRecords?: number; batchSize?: number } = {}
 ): Promise<ZohoRecord[]> {
-  const delayMs = options.delayMs ?? 120;
-  const maxRecords = options.maxRecords ?? 2000;
+  const delayMs = options.delayMs ?? 200;
+  const maxRecords = options.maxRecords ?? 10000;
+  const batchSize = options.batchSize ?? 100; // Zoho supports up to 100 IDs per GET request
 
   const limitedIds = ids.slice(0, maxRecords);
   const records: ZohoRecord[] = [];
+  const apiDomain = "https://www.zohoapis.eu";
 
-  for (let i = 0; i < limitedIds.length; i++) {
-    const recordId = limitedIds[i];
-    const record = await fetchRecordById(accessToken, module, recordId);
-    if (record) records.push(record);
+  console.log(`[Zoho] Hydrating ${limitedIds.length} records from ${module} in batches of ${batchSize}`);
 
-    // Small delay to reduce rate-limit risk
-    if (delayMs > 0 && i < limitedIds.length - 1) {
+  for (let i = 0; i < limitedIds.length; i += batchSize) {
+    const batchIds = limitedIds.slice(i, i + batchSize);
+    const idsParam = batchIds.join(",");
+    const url = `${apiDomain}/crm/v6/${module}?ids=${idsParam}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "Authorization": `Zoho-oauthtoken ${accessToken}`,
+      },
+    });
+
+    if (response.status === 429) {
+      throw new ZohoRateLimitError("Zoho API rate limited during hydration", 60);
+    }
+
+    const payload: ZohoListResponse = await response.json();
+
+    if (payload.status === "error" || payload.code) {
+      if (payload.code === "NODATA") {
+        console.log(`[Zoho] No data for batch starting at ${i}`);
+        continue;
+      }
+      throw new Error(`Zoho API error during hydration: ${payload.message || payload.code}`);
+    }
+
+    if (payload.data) {
+      records.push(...payload.data);
+    }
+
+    console.log(`[Zoho] Hydrated batch ${Math.floor(i / batchSize) + 1}: ${records.length}/${limitedIds.length} records`);
+
+    // Small delay between batches to avoid rate limiting
+    if (delayMs > 0 && i + batchSize < limitedIds.length) {
       await sleep(delayMs);
     }
   }
 
+  console.log(`[Zoho] Hydration complete: ${records.length} records from ${module}`);
   return records;
 }
 
