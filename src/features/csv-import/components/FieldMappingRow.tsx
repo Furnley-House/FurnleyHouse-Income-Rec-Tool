@@ -32,6 +32,7 @@ import {
   FIELD_VALIDATION,
   CSVColumn,
 } from '../types';
+import { ValueMappingPanel } from './ValueMappingPanel';
 
 interface FieldMappingRowProps {
   targetField: string;
@@ -42,6 +43,7 @@ interface FieldMappingRowProps {
   paymentHeader: PaymentHeaderInputs;
   aiSuggestedColumn?: string;
   aiConfidence?: 'high' | 'medium' | 'low';
+  uniqueCsvValues?: string[];  // Unique values from the mapped CSV column
   onChange: (config: FieldMappingConfig) => void;
 }
 
