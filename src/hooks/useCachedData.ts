@@ -90,8 +90,8 @@ export function useCachedData(): UseCachedDataReturn {
     setError(null);
     try {
       // Helper to fetch all rows with pagination (Supabase default limit is 1000)
-      const fetchAllRows = async <T>(table: string): Promise<T[]> => {
-        const rows: T[] = [];
+      const fetchPaginated = async (table: 'cached_payments' | 'cached_line_items' | 'cached_expectations') => {
+        const rows: any[] = [];
         const batchSize = 1000;
         let offset = 0;
         let hasMore = true;
@@ -102,7 +102,7 @@ export function useCachedData(): UseCachedDataReturn {
             .range(offset, offset + batchSize - 1);
           if (fetchError) throw new Error(`${table}: ${fetchError.message}`);
           if (data && data.length > 0) {
-            rows.push(...(data as T[]));
+            rows.push(...data);
             offset += batchSize;
             hasMore = data.length === batchSize;
           } else {
@@ -113,9 +113,9 @@ export function useCachedData(): UseCachedDataReturn {
       };
 
       // Fetch all data with pagination
-      const paymentsData = await fetchAllRows<CachedPaymentRow>('cached_payments');
-      const lineItemsData = await fetchAllRows<CachedLineItemRow>('cached_line_items');
-      const expectationsData = await fetchAllRows<CachedExpectationRow>('cached_expectations');
+      const paymentsData = await fetchPaginated('cached_payments') as CachedPaymentRow[];
+      const lineItemsData = await fetchPaginated('cached_line_items') as CachedLineItemRow[];
+      const expectationsData = await fetchPaginated('cached_expectations') as CachedExpectationRow[];
 
       // Group line items by payment
       const lineItemsByPayment = new Map<string, CachedLineItemRow[]>();
