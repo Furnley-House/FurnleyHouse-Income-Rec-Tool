@@ -318,11 +318,67 @@ export function useZohoSync() {
     }
   };
 
+  /**
+   * Batch-update records in a Zoho module (up to 100 per call).
+   * Used post-sync to update Bank_Payment_Lines and Expectations statuses.
+   */
+  const updateRecordsBatch = async (
+    module: string,
+    records: Array<{ id: string; [key: string]: unknown }>
+  ): Promise<{ successCount: number; failedCount: number }> => {
+    console.log(`[ZohoSync] Batch updating ${records.length} records in ${module}`);
+
+    const BATCH_SIZE = 100;
+    let totalSuccess = 0;
+    let totalFailed = 0;
+
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+      const chunk = records.slice(i, i + BATCH_SIZE);
+
+      const { data, error } = await supabase.functions.invoke('zoho-crm', {
+        body: {
+          action: 'updateRecordsBatch',
+          params: { module, records: chunk },
+        },
+      });
+
+      if (error) {
+        console.error(`[ZohoSync] Batch update error for ${module}:`, error);
+        totalFailed += chunk.length;
+        continue;
+      }
+
+      if (!data?.success) {
+        if (data?.code === 'ZOHO_RATE_LIMIT') {
+          const err = new Error(data?.error || 'Rate limited');
+          (err as any).isRateLimit = true;
+          (err as any).retryAfterSeconds = data?.retryAfterSeconds || 60;
+          throw err;
+        }
+        console.error(`[ZohoSync] Batch update failed for ${module}:`, data);
+        totalFailed += chunk.length;
+        continue;
+      }
+
+      totalSuccess += data.data.successCount;
+      totalFailed += data.data.failedCount;
+
+      // Delay between batches
+      if (i + BATCH_SIZE < records.length) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    console.log(`[ZohoSync] ${module} batch update complete: ${totalSuccess} success, ${totalFailed} failed`);
+    return { successCount: totalSuccess, failedCount: totalFailed };
+  };
+
   return {
     syncMatch,
     syncMatchBatch,
     syncMatches,
     syncPaymentStatus,
     syncInvalidation,
+    updateRecordsBatch,
   };
 }
