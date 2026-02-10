@@ -21,11 +21,13 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { FieldMappingRow } from '../FieldMappingRow';
+import { autoSuggestValueMappings } from '../ValueMappingPanel';
 import { 
   FieldMapping, 
   FieldMappingConfig,
   AIMappingResult, 
   INTERNAL_FIELDS, 
+  FIELD_VALIDATION,
   FileUploadInputs, 
   PaymentHeaderInputs,
   DefaultFieldValue,
