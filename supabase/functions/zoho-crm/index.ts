@@ -886,6 +886,65 @@ serve(async (req) => {
         break;
       }
 
+      case "updateRecordsBatch": {
+        // Batch update up to 100 records in a single module
+        const { module: batchModule, records: batchRecords } = params;
+        if (!batchModule || !Array.isArray(batchRecords) || batchRecords.length === 0) {
+          throw new Error("module and records array are required for updateRecordsBatch");
+        }
+        if (batchRecords.length > 100) {
+          throw new Error("Maximum 100 records per batch (Zoho API limit)");
+        }
+
+        const apiDomain = "https://www.zohoapis.eu";
+        console.log(`[Zoho] Batch updating ${batchRecords.length} records in ${batchModule}`);
+
+        const updatePayload = {
+          data: batchRecords.map((r: any) => {
+            const { id, ...fields } = r;
+            return { id, ...fields };
+          }),
+          trigger: [] // Skip workflow triggers for batch performance
+        };
+
+        const batchUpdateResponse = await fetch(`${apiDomain}/crm/v6/${batchModule}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Zoho-oauthtoken ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatePayload),
+        });
+
+        if (batchUpdateResponse.status === 429) {
+          throw new ZohoRateLimitError("Zoho API rate limited during batch update", 60);
+        }
+
+        const batchUpdatePayload = await batchUpdateResponse.json();
+        console.log(`[Zoho] Batch update response:`, JSON.stringify(batchUpdatePayload, null, 2));
+
+        const updateResults = (batchUpdatePayload?.data || []).map((item: any, idx: number) => ({
+          index: idx,
+          status: item?.status || "error",
+          id: item?.details?.id || null,
+          code: item?.code || null,
+          message: item?.message || null,
+        }));
+
+        const updateSuccessCount = updateResults.filter((r: any) => r.status === "success").length;
+        const updateFailedCount = updateResults.length - updateSuccessCount;
+
+        console.log(`[Zoho] Batch update: ${updateSuccessCount} success, ${updateFailedCount} failed`);
+
+        result = {
+          batchResults: updateResults,
+          successCount: updateSuccessCount,
+          failedCount: updateFailedCount,
+          totalRequested: batchRecords.length,
+        };
+        break;
+      }
+
       case "query": {
         // Execute custom COQL query
         if (!params.query) {
