@@ -17,35 +17,31 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { ArrowRight, Building2, Calendar as CalendarIcon, Check, ChevronsUpDown, FileText } from 'lucide-react';
+import { ArrowRight, Building2, Calendar as CalendarIcon, Check, ChevronsUpDown, FileText, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { PaymentHeaderInputs } from '../../types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PaymentDetailsStepProps {
   onComplete: (inputs: PaymentHeaderInputs) => void;
   initialValues?: PaymentHeaderInputs | null;
 }
 
-// Common financial providers - can be extended or fetched from Zoho
-const PROVIDERS = [
-  { id: 'fundment', name: 'Fundment' },
-  { id: 'aviva', name: 'Aviva' },
-  { id: 'aviva_pensions', name: 'Aviva Pensions' },
-  { id: 'standard_life', name: 'Standard Life' },
-  { id: 'scottish_widows', name: 'Scottish Widows' },
-  { id: 'legal_general', name: 'Legal & General' },
-  { id: 'royal_london', name: 'Royal London' },
-  { id: 'aegon', name: 'Aegon' },
-  { id: 'quilter', name: 'Quilter' },
-  { id: 'fidelity', name: 'Fidelity' },
-  { id: 'transact', name: 'Transact' },
-  { id: 'abrdn', name: 'abrdn' },
-  { id: 'nucleus', name: 'Nucleus' },
-  { id: 'parmenion', name: 'Parmenion' },
-  { id: 'james_hay', name: 'James Hay' },
-  { id: 'aj_bell', name: 'AJ Bell' },
-  { id: 'other', name: 'Other' },
+interface ZohoProviderOption {
+  id: string;       // Zoho record ID (numeric)
+  name: string;     // Display name
+  group?: string;   // Provider_Group for hierarchy
+}
+
+// Fallback providers in case Zoho fetch fails
+const FALLBACK_PROVIDERS: ZohoProviderOption[] = [
+  { id: '', name: 'Fundment' },
+  { id: '', name: 'Aviva' },
+  { id: '', name: 'Standard Life' },
+  { id: '', name: 'Aegon' },
+  { id: '', name: 'Quilter' },
+  { id: '', name: 'Other' },
 ];
 
 export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetailsStepProps) {
@@ -59,9 +55,46 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
   const [paymentReference, setPaymentReference] = useState(initialValues?.paymentReference || '');
   const [paymentAmount, setPaymentAmount] = useState(initialValues?.paymentAmount?.toString() || '');
   const [notes, setNotes] = useState(initialValues?.notes || '');
+  
+  // Dynamic provider list from Zoho
+  const [providers, setProviders] = useState<ZohoProviderOption[]>(FALLBACK_PROVIDERS);
+  const [loadingProviders, setLoadingProviders] = useState(true);
+
+  // Fetch providers from Zoho on mount
+  useEffect(() => {
+    async function fetchProviders() {
+      try {
+        const res = await supabase.functions.invoke('zoho-crm', {
+          body: { action: 'getProviders' },
+        });
+        if (res.data?.success && Array.isArray(res.data.data)) {
+          const zohoProviders: ZohoProviderOption[] = res.data.data
+            .filter((p: any) => p.Name)
+            .map((p: any) => ({
+              id: String(p.id),
+              name: p.Name,
+              group: p.Provider_Group || undefined,
+            }));
+          
+          if (zohoProviders.length > 0) {
+            // Add "Other" option at the end
+            zohoProviders.push({ id: '', name: 'Other' });
+            setProviders(zohoProviders);
+            console.log(`[Providers] Loaded ${zohoProviders.length - 1} providers from Zoho`);
+          }
+        }
+      } catch (err) {
+        console.warn('[Providers] Failed to fetch from Zoho, using fallback list:', err);
+      } finally {
+        setLoadingProviders(false);
+      }
+    }
+    fetchProviders();
+  }, []);
 
   const isOtherProvider = selectedProvider === 'Other';
   const effectiveProvider = isOtherProvider ? customProvider : selectedProvider;
+  const selectedProviderRecord = providers.find(p => p.name === selectedProvider);
   
   const canProceed = effectiveProvider && paymentDate && paymentReference;
 
@@ -70,14 +103,14 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
     
     onComplete({
       providerName: effectiveProvider,
-      providerId: isOtherProvider ? undefined : PROVIDERS.find(p => p.name === selectedProvider)?.id,
+      // Send the Zoho record ID (numeric) for Payment_Provider lookup
+      providerId: isOtherProvider ? undefined : selectedProviderRecord?.id || undefined,
       paymentDate: format(paymentDate!, 'yyyy-MM-dd'),
       paymentReference,
       paymentAmount: paymentAmount ? parseFloat(paymentAmount.replace(/,/g, '')) : undefined,
       notes: notes || undefined,
     });
   };
-
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
@@ -105,7 +138,14 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                   aria-expanded={providerOpen}
                   className="w-full justify-between"
                 >
-                  {selectedProvider || "Select provider..."}
+                  {loadingProviders ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading providers...
+                    </span>
+                  ) : (
+                    selectedProvider || "Select provider..."
+                  )}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -115,9 +155,9 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                   <CommandList>
                     <CommandEmpty>No provider found.</CommandEmpty>
                     <CommandGroup>
-                      {PROVIDERS.map((provider) => (
+                      {providers.map((provider) => (
                         <CommandItem
-                          key={provider.id}
+                          key={provider.id || provider.name}
                           value={provider.name}
                           onSelect={(value) => {
                             setSelectedProvider(value);
@@ -131,6 +171,9 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                             )}
                           />
                           {provider.name}
+                          {provider.group && provider.group !== provider.name && (
+                            <span className="ml-2 text-xs text-muted-foreground">({provider.group})</span>
+                          )}
                         </CommandItem>
                       ))}
                     </CommandGroup>
