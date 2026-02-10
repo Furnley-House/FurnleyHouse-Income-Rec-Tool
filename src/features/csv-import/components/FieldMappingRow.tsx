@@ -150,153 +150,168 @@ export function FieldMappingRow({
 
   const ConfidenceIcon = aiConfidence ? confidenceIcons[aiConfidence] : null;
 
+  // Should we show value mapping panel?
+  const isEnumWithCsv = config.source === 'csv' && config.csvColumn && validation?.type === 'enum' && validation.options;
+
   return (
-    <tr className="border-t">
-      {/* Field Name */}
-      <td className="px-4 py-3">
-        <div className="font-medium">
-          {label}
-          {required && <span className="text-destructive ml-1">*</span>}
-        </div>
-      </td>
-
-      {/* Source Selection */}
-      <td className="px-4 py-3">
-        <Select value={config.source} onValueChange={(v) => handleSourceChange(v as FieldSource)}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-popover border shadow-lg z-50">
-            <SelectItem value="csv">
-              <span className="flex items-center gap-2">
-                <FileSpreadsheet className="h-3 w-3" />
-                CSV Column
-              </span>
-            </SelectItem>
-            <SelectItem value="header">
-              <span className="flex items-center gap-2">
-                <Link2 className="h-3 w-3" />
-                From Header
-              </span>
-            </SelectItem>
-            <SelectItem value="hardcoded">
-              <span className="flex items-center gap-2">
-                <Edit3 className="h-3 w-3" />
-                Fixed Value
-              </span>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </td>
-
-      {/* Value Configuration */}
-      <td className="px-4 py-3">
-        {config.source === 'csv' && (
-          <div className="flex items-center gap-2">
-            <Select 
-              value={config.csvColumn || '__none__'} 
-              onValueChange={handleCsvColumnChange}
-            >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select column..." />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border shadow-lg z-50 max-h-[300px]">
-                <SelectItem value="__none__">
-                  <span className="text-muted-foreground">— Not mapped —</span>
-                </SelectItem>
-                {csvColumns.filter(col => col.header && col.header.trim() !== '').map((col) => (
-                  <SelectItem key={col.header} value={col.header}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>{col.header}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="max-w-xs">
-                        <p className="font-medium mb-1">Sample values:</p>
-                        <ul className="text-xs">
-                          {col.sampleValues.slice(0, 3).map((v, i) => (
-                            <li key={i}>• {v || '(empty)'}</li>
-                          ))}
-                        </ul>
-                      </TooltipContent>
-                    </Tooltip>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {aiSuggestedColumn === config.csvColumn && aiConfidence && ConfidenceIcon && (
-              <Badge variant="outline" className={confidenceColors[aiConfidence]}>
-                <ConfidenceIcon className="h-3 w-3 mr-1" />
-                AI
-              </Badge>
-            )}
+    <>
+      <tr className="border-t">
+        {/* Field Name */}
+        <td className="px-4 py-3">
+          <div className="font-medium">
+            {label}
+            {required && <span className="text-destructive ml-1">*</span>}
           </div>
-        )}
+        </td>
 
-        {config.source === 'header' && (
-          <div className="flex items-center gap-2">
-            <Select 
-              value={config.headerField || ''} 
-              onValueChange={(v) => handleHeaderFieldChange(v as keyof PaymentHeaderInputs)}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select field..." />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border shadow-lg z-50">
-                {HEADER_FIELD_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {config.headerField && (
-              <span className="text-sm text-muted-foreground">
-                = <span className="font-medium">{getHeaderValue(config.headerField)}</span>
-              </span>
-            )}
-          </div>
-        )}
+        {/* Source Selection */}
+        <td className="px-4 py-3">
+          <Select value={config.source} onValueChange={(v) => handleSourceChange(v as FieldSource)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-popover border shadow-lg z-50">
+              <SelectItem value="csv">
+                <span className="flex items-center gap-2">
+                  <FileSpreadsheet className="h-3 w-3" />
+                  CSV Column
+                </span>
+              </SelectItem>
+              <SelectItem value="header">
+                <span className="flex items-center gap-2">
+                  <Link2 className="h-3 w-3" />
+                  From Header
+                </span>
+              </SelectItem>
+              <SelectItem value="hardcoded">
+                <span className="flex items-center gap-2">
+                  <Edit3 className="h-3 w-3" />
+                  Fixed Value
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </td>
 
-        {config.source === 'hardcoded' && (
-          <div className="space-y-1">
-            {validation?.type === 'enum' && validation.options ? (
+        {/* Value Configuration */}
+        <td className="px-4 py-3">
+          {config.source === 'csv' && (
+            <div className="flex items-center gap-2">
               <Select 
-                value={config.hardcodedValue || ''} 
-                onValueChange={handleHardcodedChange}
+                value={config.csvColumn || '__none__'} 
+                onValueChange={handleCsvColumnChange}
               >
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Select value..." />
+                  <SelectValue placeholder="Select column..." />
                 </SelectTrigger>
-                <SelectContent className="bg-popover border shadow-lg z-50">
-                  {validation.options.map((opt) => (
-                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                <SelectContent className="bg-popover border shadow-lg z-50 max-h-[300px]">
+                  <SelectItem value="__none__">
+                    <span className="text-muted-foreground">— Not mapped —</span>
+                  </SelectItem>
+                  {csvColumns.filter(col => col.header && col.header.trim() !== '').map((col) => (
+                    <SelectItem key={col.header} value={col.header}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>{col.header}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p className="font-medium mb-1">Sample values:</p>
+                          <ul className="text-xs">
+                            {col.sampleValues.slice(0, 3).map((v, i) => (
+                              <li key={i}>• {v || '(empty)'}</li>
+                            ))}
+                          </ul>
+                        </TooltipContent>
+                      </Tooltip>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            ) : (
-              <Input
-                value={config.hardcodedValue || ''}
-                onChange={(e) => handleHardcodedChange(e.target.value)}
-                placeholder={validation?.format || 'Enter value...'}
-                className={`w-[200px] ${validationError ? 'border-destructive' : ''}`}
-              />
-            )}
-            {validationError && (
-              <p className="text-xs text-destructive">{validationError}</p>
-            )}
-          </div>
-        )}
-      </td>
+              {aiSuggestedColumn === config.csvColumn && aiConfidence && ConfidenceIcon && (
+                <Badge variant="outline" className={confidenceColors[aiConfidence]}>
+                  <ConfidenceIcon className="h-3 w-3 mr-1" />
+                  AI
+                </Badge>
+              )}
+            </div>
+          )}
 
-      {/* AI Confidence (only for CSV mappings) */}
-      <td className="px-4 py-3 text-center">
-        {config.source === 'csv' && aiSuggestedColumn && config.csvColumn === aiSuggestedColumn && aiConfidence && ConfidenceIcon && (
-          <Badge variant="outline" className={confidenceColors[aiConfidence]}>
-            <ConfidenceIcon className="h-3 w-3 mr-1" />
-            {aiConfidence}
-          </Badge>
-        )}
-      </td>
-    </tr>
+          {config.source === 'header' && (
+            <div className="flex items-center gap-2">
+              <Select 
+                value={config.headerField || ''} 
+                onValueChange={(v) => handleHeaderFieldChange(v as keyof PaymentHeaderInputs)}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select field..." />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border shadow-lg z-50">
+                  {HEADER_FIELD_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {config.headerField && (
+                <span className="text-sm text-muted-foreground">
+                  = <span className="font-medium">{getHeaderValue(config.headerField)}</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {config.source === 'hardcoded' && (
+            <div className="space-y-1">
+              {validation?.type === 'enum' && validation.options ? (
+                <Select 
+                  value={config.hardcodedValue || ''} 
+                  onValueChange={handleHardcodedChange}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Select value..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border shadow-lg z-50">
+                    {validation.options.map((opt) => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={config.hardcodedValue || ''}
+                  onChange={(e) => handleHardcodedChange(e.target.value)}
+                  placeholder={validation?.format || 'Enter value...'}
+                  className={`w-[200px] ${validationError ? 'border-destructive' : ''}`}
+                />
+              )}
+              {validationError && (
+                <p className="text-xs text-destructive">{validationError}</p>
+              )}
+            </div>
+          )}
+        </td>
+
+        {/* AI Confidence (only for CSV mappings) */}
+        <td className="px-4 py-3 text-center">
+          {config.source === 'csv' && aiSuggestedColumn && config.csvColumn === aiSuggestedColumn && aiConfidence && ConfidenceIcon && (
+            <Badge variant="outline" className={confidenceColors[aiConfidence]}>
+              <ConfidenceIcon className="h-3 w-3 mr-1" />
+              {aiConfidence}
+            </Badge>
+          )}
+        </td>
+      </tr>
+
+      {/* Value Mapping Panel for enum fields mapped to CSV */}
+      {isEnumWithCsv && uniqueCsvValues && uniqueCsvValues.length > 0 && (
+        <ValueMappingPanel
+          uniqueValues={uniqueCsvValues}
+          enumOptions={validation!.options!}
+          valueMappings={config.valueMappings || {}}
+          onChange={(mappings) => onChange({ ...config, valueMappings: mappings })}
+        />
+      )}
+    </>
   );
 }
