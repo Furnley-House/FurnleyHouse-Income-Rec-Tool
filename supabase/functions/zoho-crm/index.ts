@@ -988,11 +988,13 @@ serve(async (req) => {
         }
 
         const paymentResult = await paymentRes.json();
+        console.log(`[Zoho] Bank_Payment create response:`, JSON.stringify(paymentResult, null, 2));
         const paymentRecord = paymentResult?.data?.[0];
 
         if (!paymentRecord || paymentRecord.status !== "success") {
           const errMsg = paymentRecord?.message || "Failed to create Bank_Payment";
-          throw new Error(`Bank_Payment creation failed: ${errMsg}`);
+          const errDetails = paymentRecord?.details ? ` Details: ${JSON.stringify(paymentRecord.details)}` : "";
+          throw new Error(`Bank_Payment creation failed: ${errMsg}${errDetails}`);
         }
 
         const newPaymentId = paymentRecord.details.id;
