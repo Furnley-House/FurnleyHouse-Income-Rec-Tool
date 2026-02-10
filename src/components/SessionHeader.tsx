@@ -51,6 +51,7 @@ export function SessionHeader() {
   
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   
   // Load pending match count on mount and when matches change
