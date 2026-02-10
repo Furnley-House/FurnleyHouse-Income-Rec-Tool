@@ -752,7 +752,8 @@ serve(async (req) => {
 
         const now = formatZohoDateTime(new Date());
         const batchData = {
-          data: records.map((r: any) => ({
+          data: records.map((r: any, idx: number) => ({
+            Name: `Match-${Date.now()}-${idx}`,
             Bank_Payment_Ref_Match: { id: r.paymentId },
             Payment_Line_Match: { id: r.lineItemId },
             Expectation: { id: r.expectationId },
