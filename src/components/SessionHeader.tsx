@@ -32,6 +32,7 @@ import { DataImport } from './DataImport';
 import { toast } from 'sonner';
 
 export function SessionHeader() {
+  const navigate = useNavigate();
   const { 
     statistics, 
     tolerance, 
