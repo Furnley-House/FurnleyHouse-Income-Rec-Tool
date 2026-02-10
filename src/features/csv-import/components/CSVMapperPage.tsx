@@ -282,6 +282,7 @@ export function CSVMapperPage() {
             fileInputs={wizardState.fileInputs}
             paymentHeader={wizardState.paymentHeader}
             mappings={wizardState.finalMappings}
+            defaultValues={wizardState.defaultValues}
             rowOffset={wizardState.rowOffset}
             onBack={handleBack}
             onConfirm={handleConfirmImport}
