@@ -159,7 +159,7 @@ export function useCachedData(): UseCachedDataReturn {
         };
       });
 
-      const expectations: Expectation[] = (expectationsData as CachedExpectationRow[]).map(e => ({
+      const expectations: Expectation[] = expectationsData.map(e => ({
         id: e.id,
         zohoId: e.zoho_record_id || undefined,
         clientName: e.client_name || 'Unknown Client',
