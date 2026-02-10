@@ -958,13 +958,18 @@ serve(async (req) => {
         // Phase 1: Create the Bank_Payment header
         console.log(`[Zoho] Creating Bank_Payment: ${payment.Payment_Reference}`);
 
+        // Only include Payment_Provider if it looks like a valid Zoho record ID (numeric string)
+        const providerLookup = payment.Payment_Provider && /^\d+$/.test(String(payment.Payment_Provider))
+          ? { id: String(payment.Payment_Provider) }
+          : undefined;
+
         const paymentPayload = {
           data: [{
             Payment_Reference: payment.Payment_Reference,
             Bank_Reference: payment.Bank_Reference || payment.Payment_Reference,
             Payment_Date: payment.Payment_Date,
             Amount: payment.Amount,
-            Payment_Provider: payment.Payment_Provider ? { id: payment.Payment_Provider } : undefined,
+            ...(providerLookup ? { Payment_Provider: providerLookup } : {}),
             Status: "unreconciled",
             Reconciled_Amount: 0,
             Remaining_Amount: payment.Amount,
