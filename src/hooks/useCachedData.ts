@@ -179,7 +179,7 @@ export function useCachedData(): UseCachedDataReturn {
         matchedToPayments: [],
       }));
 
-      console.log(`[Cache] Loaded ${payments.length} payments with ${lineItemsData?.length || 0} line items, ${expectations.length} expectations`);
+      console.log(`[Cache] Loaded ${payments.length} payments with ${lineItemsData.length} line items, ${expectations.length} expectations`);
       return { payments, expectations };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load from cache';
