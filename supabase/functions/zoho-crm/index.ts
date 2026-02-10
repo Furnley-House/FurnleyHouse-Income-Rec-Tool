@@ -140,13 +140,13 @@ function resolveFieldApiName(fields: ZohoField[], candidates: string[]): string 
   return null;
 }
 
-// Get a valid access token, refreshing if necessary
+// Get a valid access token, checking DB cache first to avoid redundant refreshes across cold starts
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
   
-  // Return cached token if still valid (with 5 min buffer)
+  // Return in-memory cached token if still valid (with 5 min buffer)
   if (cachedAccessToken && tokenExpiresAt > now + 300000) {
-    console.log("Using cached access token");
+    console.log("Using in-memory cached access token");
     return cachedAccessToken;
   }
 
@@ -157,15 +157,40 @@ async function getAccessToken(): Promise<string> {
   }
 
   refreshInFlight = (async () => {
+    // Check DB-cached token first (shared across all edge function instances)
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const db = createClient(supabaseUrl, supabaseServiceKey);
+      
+      const { data: cached } = await db
+        .from('zoho_token_cache')
+        .select('access_token, expires_at')
+        .eq('id', 'default')
+        .single();
+      
+      if (cached?.access_token && cached?.expires_at) {
+        const expiresAtMs = new Date(cached.expires_at).getTime();
+        if (expiresAtMs > now + 300000) {
+          console.log("Using DB-cached access token");
+          cachedAccessToken = cached.access_token;
+          tokenExpiresAt = expiresAtMs;
+          return cachedAccessToken;
+        }
+      }
+    } catch (dbErr) {
+      console.warn("DB token cache read failed, will refresh:", dbErr);
+    }
+
     console.log("Refreshing access token...");
   
-  const clientId = Deno.env.get("ZOHO_CLIENT_ID");
-  const clientSecret = Deno.env.get("ZOHO_CLIENT_SECRET");
-  const refreshToken = Deno.env.get("ZOHO_REFRESH_TOKEN");
+    const clientId = Deno.env.get("ZOHO_CLIENT_ID");
+    const clientSecret = Deno.env.get("ZOHO_CLIENT_SECRET");
+    const refreshToken = Deno.env.get("ZOHO_REFRESH_TOKEN");
 
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error("Missing Zoho credentials. Please configure ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REFRESH_TOKEN.");
-  }
+    if (!clientId || !clientSecret || !refreshToken) {
+      throw new Error("Missing Zoho credentials. Please configure ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REFRESH_TOKEN.");
+    }
 
     // Use EU accounts endpoint
     const tokenUrl = "https://accounts.zoho.eu/oauth/v2/token";
@@ -217,6 +242,26 @@ async function getAccessToken(): Promise<string> {
 
       cachedAccessToken = tokenData.access_token;
       tokenExpiresAt = now + tokenData.expires_in * 1000;
+      
+      // Persist to DB so other instances can reuse
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const db = createClient(supabaseUrl, supabaseServiceKey);
+        
+        await db
+          .from('zoho_token_cache')
+          .upsert({
+            id: 'default',
+            access_token: cachedAccessToken,
+            expires_at: new Date(tokenExpiresAt).toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        console.log("Access token cached to DB");
+      } catch (dbErr) {
+        console.warn("Failed to cache token to DB:", dbErr);
+      }
+      
       return cachedAccessToken;
     }
 
