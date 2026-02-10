@@ -289,6 +289,7 @@ export function MappingReviewStep({
               <tbody>
                 {INTERNAL_FIELDS.map((field) => {
                   const aiMapping = getAIMapping(field.value);
+                  const csvCol = fieldConfigs[field.value]?.csvColumn;
                   return (
                     <FieldMappingRow
                       key={field.value}
@@ -300,6 +301,7 @@ export function MappingReviewStep({
                       paymentHeader={paymentHeader}
                       aiSuggestedColumn={aiMapping?.csvColumn}
                       aiConfidence={aiMapping?.confidence}
+                      uniqueCsvValues={csvCol ? uniqueValuesByColumn[csvCol] : undefined}
                       onChange={(config) => updateFieldConfig(field.value, config)}
                     />
                   );
