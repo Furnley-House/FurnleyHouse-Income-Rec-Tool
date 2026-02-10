@@ -713,7 +713,6 @@ serve(async (req) => {
             Match_Method: params.matchMethod || "manual",
             Match_Quality: params.matchQuality || "good",
             Notes: params.notes || "",
-            Matched_By: "Reconciliation Tool",
             Matched_At: formatZohoDateTime(new Date()),
             Confirmed: true,
           }]
