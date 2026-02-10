@@ -18,12 +18,13 @@ import {
   Calendar,
   Hash
 } from 'lucide-react';
-import { FieldMapping, FileUploadInputs, PaymentHeaderInputs, INTERNAL_FIELDS } from '../../types';
+import { FieldMapping, DefaultFieldValue, FileUploadInputs, PaymentHeaderInputs, INTERNAL_FIELDS } from '../../types';
 
 interface ValidationStepProps {
   fileInputs: FileUploadInputs;
   paymentHeader: PaymentHeaderInputs;
   mappings: FieldMapping[];
+  defaultValues?: DefaultFieldValue[];
   rowOffset: number;
   onBack: () => void;
   onConfirm: () => void;
@@ -34,6 +35,7 @@ export function ValidationStep({
   fileInputs, 
   paymentHeader,
   mappings, 
+  defaultValues = [],
   rowOffset, 
   onBack, 
   onConfirm,
@@ -42,8 +44,10 @@ export function ValidationStep({
   const validation = useMemo(() => {
     const requiredFields = INTERNAL_FIELDS.filter(f => f.required);
     const mappedFields = mappings.filter(m => !m.ignored && m.targetField).map(m => m.targetField);
+    const defaultedFields = defaultValues.filter(d => d.enabled).map(d => d.targetField);
+    const allConfiguredFields = [...mappedFields, ...defaultedFields];
     
-    const missingRequired = requiredFields.filter(f => !mappedFields.includes(f.value));
+    const missingRequired = requiredFields.filter(f => !allConfiguredFields.includes(f.value));
     const duplicateMappings = mappedFields.filter((f, i) => mappedFields.indexOf(f) !== i);
     
     const errors: string[] = [];
@@ -77,7 +81,7 @@ export function ValidationStep({
       activeMappings,
       ignoredCount: mappings.filter(m => m.ignored).length,
     };
-  }, [mappings]);
+  }, [mappings, defaultValues]);
 
   const effectiveRowCount = fileInputs.csvData.totalRows - rowOffset;
 
