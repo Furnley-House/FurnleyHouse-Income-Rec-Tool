@@ -1016,7 +1016,8 @@ serve(async (req) => {
           const batch = lineItems.slice(i, i + batchSize);
 
           const lineItemPayload = {
-            data: batch.map((li: any) => ({
+            data: batch.map((li: any, idx: number) => ({
+              Name: li.Client_Name || li.Plan_Reference || `Line-${i + idx + 1}`,
               Bank_Payment: { id: newPaymentId },
               Client_Name: li.Client_Name || "",
               Plan_Reference: li.Plan_Reference || "",
