@@ -1050,11 +1050,18 @@ serve(async (req) => {
           }
 
           const liResult = await liRes.json();
+          
+          // Log first batch response for debugging
+          if (i === 0) {
+            console.log(`[Zoho] First batch response sample:`, JSON.stringify(liResult?.data?.slice(0, 2), null, 2));
+          }
+
           const batchResults = (liResult?.data || []).map((item: any, idx: number) => ({
             index: i + idx,
             status: item?.status || "error",
             id: item?.details?.id || null,
             message: item?.message || null,
+            details: item?.details || null,
           }));
 
           allLineItemResults.push(...batchResults);
