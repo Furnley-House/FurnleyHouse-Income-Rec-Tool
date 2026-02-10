@@ -703,9 +703,9 @@ serve(async (req) => {
         const apiDomain = "https://www.zohoapis.eu";
         const matchData = {
           data: [{
-            Bank_Payment_Ref_Match: params.paymentId,
-            Payment_Line_Match: params.lineItemId,
-            Expectation: params.expectationId,
+            Bank_Payment_Ref_Match: { id: params.paymentId },
+            Payment_Line_Match: { id: params.lineItemId },
+            Expectation: { id: params.expectationId },
             Matched_Amount: params.matchedAmount,
             Variance: params.variance || 0,
             Variance_Percentage: params.variancePercentage || 0,
@@ -713,7 +713,6 @@ serve(async (req) => {
             Match_Method: params.matchMethod || "manual",
             Match_Quality: params.matchQuality || "good",
             Notes: params.notes || "",
-            Matched_By: "Reconciliation Tool",
             Matched_At: formatZohoDateTime(new Date()),
             Confirmed: true,
           }]
@@ -754,9 +753,9 @@ serve(async (req) => {
         const now = formatZohoDateTime(new Date());
         const batchData = {
           data: records.map((r: any) => ({
-            Bank_Payment_Ref_Match: r.paymentId,
-            Payment_Line_Match: r.lineItemId,
-            Expectation: r.expectationId,
+            Bank_Payment_Ref_Match: { id: r.paymentId },
+            Payment_Line_Match: { id: r.lineItemId },
+            Expectation: { id: r.expectationId },
             Matched_Amount: r.matchedAmount,
             Variance: r.variance || 0,
             Variance_Percentage: r.variancePercentage || 0,
@@ -764,7 +763,6 @@ serve(async (req) => {
             Match_Method: r.matchMethod || "manual",
             Match_Quality: r.matchQuality || "good",
             Notes: r.notes || "",
-            Matched_By: "Reconciliation Tool",
             Matched_At: now,
             Confirmed: true,
           })),
@@ -787,6 +785,7 @@ serve(async (req) => {
         }
 
         const batchPayload = await batchResponse.json();
+        console.log(`[Zoho] Batch response:`, JSON.stringify(batchPayload, null, 2));
 
         // Parse per-record results
         const results = (batchPayload?.data || []).map((item: any, idx: number) => ({
@@ -795,6 +794,7 @@ serve(async (req) => {
           id: item?.details?.id || null,
           code: item?.code || null,
           message: item?.message || null,
+          details: item?.details || null,
         }));
 
         const successCount = results.filter((r: any) => r.status === "success").length;
