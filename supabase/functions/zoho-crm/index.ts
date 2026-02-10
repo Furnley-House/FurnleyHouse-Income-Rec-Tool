@@ -945,6 +945,133 @@ serve(async (req) => {
         break;
       }
 
+      case "createPaymentWithLineItems": {
+        // Create a Bank_Payment header record, then batch-create its Bank_Payment_Lines
+        // Uses the same rate-limit handling and batch patterns as match sync
+        const { payment, lineItems } = params;
+        if (!payment || !Array.isArray(lineItems) || lineItems.length === 0) {
+          throw new Error("payment object and lineItems array are required for createPaymentWithLineItems");
+        }
+
+        const apiDomain = "https://www.zohoapis.eu";
+
+        // Phase 1: Create the Bank_Payment header
+        console.log(`[Zoho] Creating Bank_Payment: ${payment.Payment_Reference}`);
+
+        const paymentPayload = {
+          data: [{
+            Payment_Reference: payment.Payment_Reference,
+            Bank_Reference: payment.Bank_Reference || payment.Payment_Reference,
+            Payment_Date: payment.Payment_Date,
+            Amount: payment.Amount,
+            Payment_Provider: payment.Payment_Provider ? { id: payment.Payment_Provider } : undefined,
+            Status: "unreconciled",
+            Reconciled_Amount: 0,
+            Remaining_Amount: payment.Amount,
+            Notes: payment.Notes || "",
+            Reconciled_By: "Reconciliation Tool",
+          }],
+          trigger: [],
+        };
+
+        const paymentRes = await fetch(`${apiDomain}/crm/v6/Bank_Payments`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Zoho-oauthtoken ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(paymentPayload),
+        });
+
+        if (paymentRes.status === 429) {
+          throw new ZohoRateLimitError("Zoho API rate limited while creating payment", 60);
+        }
+
+        const paymentResult = await paymentRes.json();
+        const paymentRecord = paymentResult?.data?.[0];
+
+        if (!paymentRecord || paymentRecord.status !== "success") {
+          const errMsg = paymentRecord?.message || "Failed to create Bank_Payment";
+          throw new Error(`Bank_Payment creation failed: ${errMsg}`);
+        }
+
+        const newPaymentId = paymentRecord.details.id;
+        console.log(`[Zoho] Created Bank_Payment ${newPaymentId}`);
+
+        // Phase 2: Batch-create line items (max 100 per call, with delays)
+        await sleep(2000); // Respect rate limits between phases
+
+        const allLineItemResults: any[] = [];
+        const batchSize = 100;
+
+        for (let i = 0; i < lineItems.length; i += batchSize) {
+          const batch = lineItems.slice(i, i + batchSize);
+
+          const lineItemPayload = {
+            data: batch.map((li: any) => ({
+              Bank_Payment: { id: newPaymentId },
+              Client_Name: li.Client_Name || "",
+              Plan_Reference: li.Plan_Reference || "",
+              Amount: li.Amount || 0,
+              Fee_Category: li.Fee_Category || "ongoing",
+              Fee_Type: li.Fee_Type || "",
+              Description: li.Description || "",
+              Adviser_Name: li.Adviser_Name || "",
+              Status: "unmatched",
+            })),
+            trigger: [],
+          };
+
+          console.log(`[Zoho] Creating line items batch ${Math.floor(i / batchSize) + 1}: ${batch.length} records`);
+
+          const liRes = await fetch(`${apiDomain}/crm/v6/Bank_Payment_Lines`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Zoho-oauthtoken ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(lineItemPayload),
+          });
+
+          if (liRes.status === 429) {
+            // Return partial success so the frontend knows the payment was created
+            throw new ZohoRateLimitError(
+              `Rate limited after creating payment and ${allLineItemResults.length} line items. Payment ID: ${newPaymentId}`,
+              60
+            );
+          }
+
+          const liResult = await liRes.json();
+          const batchResults = (liResult?.data || []).map((item: any, idx: number) => ({
+            index: i + idx,
+            status: item?.status || "error",
+            id: item?.details?.id || null,
+            message: item?.message || null,
+          }));
+
+          allLineItemResults.push(...batchResults);
+
+          // Delay between batches
+          if (i + batchSize < lineItems.length) {
+            await sleep(2000);
+          }
+        }
+
+        const liSuccessCount = allLineItemResults.filter((r: any) => r.status === "success").length;
+        const liFailedCount = allLineItemResults.length - liSuccessCount;
+
+        console.log(`[Zoho] Line items: ${liSuccessCount} success, ${liFailedCount} failed`);
+
+        result = {
+          paymentId: newPaymentId,
+          lineItemResults: allLineItemResults,
+          successCount: liSuccessCount,
+          failedCount: liFailedCount,
+          totalRequested: lineItems.length,
+        };
+        break;
+      }
+
       case "query": {
         // Execute custom COQL query
         if (!params.query) {

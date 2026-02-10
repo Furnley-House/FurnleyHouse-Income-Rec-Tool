@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -85,18 +86,93 @@ export function CSVMapperPage() {
     setCurrentStep('validation');
   };
 
+  const resolveFieldValue = useCallback((row: Record<string, string>, targetField: string): string => {
+    // Check defaults first (header or hardcoded values)
+    const defaultVal = wizardState.defaultValues.find(d => d.targetField === targetField && d.enabled);
+    if (defaultVal) {
+      if (defaultVal.source === 'header' && defaultVal.headerField && wizardState.paymentHeader) {
+        const val = wizardState.paymentHeader[defaultVal.headerField];
+        return val !== undefined && val !== null ? String(val) : '';
+      }
+      if (defaultVal.source === 'hardcoded' && defaultVal.hardcodedValue) {
+        return defaultVal.hardcodedValue;
+      }
+    }
+    // Then check CSV mapping
+    const mapping = wizardState.finalMappings.find(m => m.targetField === targetField && !m.ignored);
+    if (mapping) {
+      return row[mapping.csvColumn] || '';
+    }
+    return '';
+  }, [wizardState]);
+
   const handleConfirmImport = async () => {
+    if (!wizardState.paymentHeader || !wizardState.fileInputs) return;
+
     setIsSubmitting(true);
     try {
-      // TODO: Implement actual import to Zoho
-      // For now, simulate a delay and show success
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      toast.success('Import completed successfully!', {
-        description: `Imported ${wizardState.fileInputs?.csvData.totalRows} line items for ${wizardState.paymentHeader?.providerName}`,
+      const { paymentHeader, fileInputs } = wizardState;
+      const rows = fileInputs.csvData.rows.slice(wizardState.rowOffset);
+
+      // Build line items from CSV rows using mappings
+      const lineItems = rows.map(row => ({
+        Client_Name: resolveFieldValue(row, 'client_name'),
+        Plan_Reference: resolveFieldValue(row, 'policy_reference'),
+        Amount: parseFloat(resolveFieldValue(row, 'amount').replace(/[^0-9.-]/g, '')) || 0,
+        Fee_Category: resolveFieldValue(row, 'fee_category') || 'ongoing',
+        Fee_Type: resolveFieldValue(row, 'transaction_type') || '',
+        Description: resolveFieldValue(row, 'description') || '',
+        Adviser_Name: resolveFieldValue(row, 'adviser_name') || '',
+      }));
+
+      // Call edge function with the same rate-limit aware patterns
+      const res = await supabase.functions.invoke('zoho-crm', {
+        body: {
+          action: 'createPaymentWithLineItems',
+          params: {
+            payment: {
+              Payment_Reference: paymentHeader.paymentReference,
+              Bank_Reference: paymentHeader.paymentReference,
+              Payment_Date: paymentHeader.paymentDate,
+              Amount: paymentHeader.paymentAmount || lineItems.reduce((s, li) => s + li.Amount, 0),
+              Payment_Provider: paymentHeader.providerId || undefined,
+              Notes: paymentHeader.notes || '',
+            },
+            lineItems,
+          },
+        },
       });
-      
-      // Navigate back to home or to reconciliation
+
+      if (res.error) throw new Error(res.error.message);
+
+      // Handle rate limit response
+      if (res.data?.code === 'ZOHO_RATE_LIMIT') {
+        const retrySeconds = res.data.retryAfterSeconds || 60;
+        toast.error('Rate Limited', {
+          description: `Zoho API rate limited. Please wait ${retrySeconds}s and try again. ${res.data.error}`,
+          duration: 10000,
+        });
+        return;
+      }
+
+      if (!res.data?.success) {
+        throw new Error(res.data?.error || 'Import failed');
+      }
+
+      const result = res.data.data;
+      const failedCount = result.failedCount || 0;
+
+      if (failedCount > 0) {
+        toast.warning('Import partially complete', {
+          description: `Payment created. ${result.successCount}/${result.totalRequested} line items imported. ${failedCount} failed.`,
+          duration: 8000,
+        });
+      } else {
+        toast.success('Import completed successfully!', {
+          description: `Payment "${paymentHeader.paymentReference}" created with ${result.successCount} line items.`,
+        });
+      }
+
       navigate('/');
     } catch (error) {
       toast.error('Import failed', {
