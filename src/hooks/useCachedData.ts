@@ -89,24 +89,33 @@ export function useCachedData(): UseCachedDataReturn {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch payments with their line items
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('cached_payments')
-        .select('*');
+      // Helper to fetch all rows with pagination (Supabase default limit is 1000)
+      const fetchAllRows = async <T>(table: string): Promise<T[]> => {
+        const rows: T[] = [];
+        const batchSize = 1000;
+        let offset = 0;
+        let hasMore = true;
+        while (hasMore) {
+          const { data, error: fetchError } = await supabase
+            .from(table)
+            .select('*')
+            .range(offset, offset + batchSize - 1);
+          if (fetchError) throw new Error(`${table}: ${fetchError.message}`);
+          if (data && data.length > 0) {
+            rows.push(...(data as T[]));
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
+        }
+        return rows;
+      };
 
-      if (paymentsError) throw new Error(paymentsError.message);
-
-      const { data: lineItemsData, error: lineItemsError } = await supabase
-        .from('cached_line_items')
-        .select('*');
-
-      if (lineItemsError) throw new Error(lineItemsError.message);
-
-      const { data: expectationsData, error: expectationsError } = await supabase
-        .from('cached_expectations')
-        .select('*');
-
-      if (expectationsError) throw new Error(expectationsError.message);
+      // Fetch all data with pagination
+      const paymentsData = await fetchAllRows<CachedPaymentRow>('cached_payments');
+      const lineItemsData = await fetchAllRows<CachedLineItemRow>('cached_line_items');
+      const expectationsData = await fetchAllRows<CachedExpectationRow>('cached_expectations');
 
       // Group line items by payment
       const lineItemsByPayment = new Map<string, CachedLineItemRow[]>();
