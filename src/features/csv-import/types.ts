@@ -29,6 +29,7 @@ export interface FieldMappingConfig {
   csvColumn?: string;        // Used when source = 'csv'
   headerField?: keyof PaymentHeaderInputs;  // Used when source = 'header'
   hardcodedValue?: string;   // Used when source = 'hardcoded'
+  valueMappings?: Record<string, string>;  // CSV value → enum value mapping for enum fields
 }
 
 // Which header fields can be used as sources for each target field
