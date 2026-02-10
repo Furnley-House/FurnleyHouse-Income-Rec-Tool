@@ -381,8 +381,10 @@ export function SessionHeader() {
             ) : (
               <CheckCircle2 className="h-4 w-4" />
             )}
-            Sync
-            {hasPendingMatches && (
+            {isSyncing && syncProgress
+              ? `${syncProgress.done}/${syncProgress.total}`
+              : 'Sync'}
+            {!isSyncing && hasPendingMatches && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                 {pendingCount}
               </Badge>
