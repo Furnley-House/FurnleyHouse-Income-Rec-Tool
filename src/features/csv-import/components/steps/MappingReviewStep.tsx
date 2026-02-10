@@ -174,7 +174,7 @@ export function MappingReviewStep({
       }
     });
 
-    onComplete(mappings, rowOffset, defaults);
+    onComplete(mappings, rowOffset, defaults, fieldConfigs);
   };
 
   // Count how many required fields are configured
