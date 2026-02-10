@@ -17,35 +17,31 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { ArrowRight, Building2, Calendar as CalendarIcon, Check, ChevronsUpDown, FileText } from 'lucide-react';
+import { ArrowRight, Building2, Calendar as CalendarIcon, Check, ChevronsUpDown, FileText, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { PaymentHeaderInputs } from '../../types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PaymentDetailsStepProps {
   onComplete: (inputs: PaymentHeaderInputs) => void;
   initialValues?: PaymentHeaderInputs | null;
 }
 
-// Common financial providers - can be extended or fetched from Zoho
-const PROVIDERS = [
-  { id: 'fundment', name: 'Fundment' },
-  { id: 'aviva', name: 'Aviva' },
-  { id: 'aviva_pensions', name: 'Aviva Pensions' },
-  { id: 'standard_life', name: 'Standard Life' },
-  { id: 'scottish_widows', name: 'Scottish Widows' },
-  { id: 'legal_general', name: 'Legal & General' },
-  { id: 'royal_london', name: 'Royal London' },
-  { id: 'aegon', name: 'Aegon' },
-  { id: 'quilter', name: 'Quilter' },
-  { id: 'fidelity', name: 'Fidelity' },
-  { id: 'transact', name: 'Transact' },
-  { id: 'abrdn', name: 'abrdn' },
-  { id: 'nucleus', name: 'Nucleus' },
-  { id: 'parmenion', name: 'Parmenion' },
-  { id: 'james_hay', name: 'James Hay' },
-  { id: 'aj_bell', name: 'AJ Bell' },
-  { id: 'other', name: 'Other' },
+interface ZohoProviderOption {
+  id: string;       // Zoho record ID (numeric)
+  name: string;     // Display name
+  group?: string;   // Provider_Group for hierarchy
+}
+
+// Fallback providers in case Zoho fetch fails
+const FALLBACK_PROVIDERS: ZohoProviderOption[] = [
+  { id: '', name: 'Fundment' },
+  { id: '', name: 'Aviva' },
+  { id: '', name: 'Standard Life' },
+  { id: '', name: 'Aegon' },
+  { id: '', name: 'Quilter' },
+  { id: '', name: 'Other' },
 ];
 
 export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetailsStepProps) {
