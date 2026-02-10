@@ -335,7 +335,10 @@ export function SessionHeader() {
       <div className="flex items-center justify-between gap-6">
         {/* Left: Title and Period */}
         <div className="flex items-center gap-4">
-          <div>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Back to Dashboard">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
             <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
               <Wallet className="h-5 w-5 text-primary" />
               Payment Reconciliation
