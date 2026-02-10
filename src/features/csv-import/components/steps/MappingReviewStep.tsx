@@ -58,6 +58,21 @@ export function MappingReviewStep({
 }: MappingReviewStepProps) {
   const [rowOffset, setRowOffset] = useState(aiResult.suggestedRowOffset);
   
+  // Compute unique values per CSV column (for value mapping on enum fields)
+  const uniqueValuesByColumn = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    const rows = fileInputs.csvData.rows;
+    for (const col of fileInputs.csvData.columns) {
+      const values = new Set<string>();
+      for (const row of rows) {
+        const val = row[col.header]?.trim();
+        if (val) values.add(val);
+      }
+      result[col.header] = Array.from(values).sort();
+    }
+    return result;
+  }, [fileInputs]);
+
   // Initialize field configs from AI suggestions
   const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldMappingConfig>>(() => {
     const configs: Record<string, FieldMappingConfig> = {};
@@ -70,7 +85,6 @@ export function MappingReviewStep({
       const initialDefault = initialDefaults.find(d => d.targetField === field.value && d.enabled);
       
       if (initialDefault) {
-        // Use existing default
         configs[field.value] = {
           targetField: field.value,
           source: initialDefault.source,
@@ -78,21 +92,26 @@ export function MappingReviewStep({
           hardcodedValue: initialDefault.hardcodedValue,
         };
       } else if (aiMapping) {
-        // Use AI suggestion
+        // Use AI suggestion — auto-suggest value mappings for enum fields
+        const validation = FIELD_VALIDATION[field.value];
+        let valueMappings: Record<string, string> | undefined;
+        if (validation?.type === 'enum' && validation.options) {
+          const uniqueVals = uniqueValuesByColumn[aiMapping.csvColumn] || [];
+          valueMappings = autoSuggestValueMappings(uniqueVals, validation.options);
+        }
         configs[field.value] = {
           targetField: field.value,
           source: 'csv',
           csvColumn: aiMapping.csvColumn,
+          valueMappings,
         };
       } else if (field.value === 'payment_date') {
-        // Default payment_date to header inheritance
         configs[field.value] = {
           targetField: field.value,
           source: 'header',
           headerField: 'paymentDate',
         };
       } else {
-        // Default to CSV with no column selected
         configs[field.value] = {
           targetField: field.value,
           source: 'csv',
