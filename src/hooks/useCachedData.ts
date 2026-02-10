@@ -119,7 +119,7 @@ export function useCachedData(): UseCachedDataReturn {
 
       // Group line items by payment
       const lineItemsByPayment = new Map<string, CachedLineItemRow[]>();
-      (lineItemsData as CachedLineItemRow[]).forEach(li => {
+      lineItemsData.forEach(li => {
         const existing = lineItemsByPayment.get(li.payment_id) || [];
         existing.push(li);
         lineItemsByPayment.set(li.payment_id, existing);
