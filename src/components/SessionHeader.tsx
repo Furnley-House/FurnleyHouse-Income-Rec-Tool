@@ -172,18 +172,17 @@ export function SessionHeader() {
     let totalFailed = 0;
     const allSyncedIds: string[] = [];
     
-    // Build batch records with resolved Zoho IDs
+    // Build batch records - pending matches already store Zoho IDs directly
     const batchItems = pending.map(match => {
-      const payment = payments.find(p => p.id === match.paymentId);
-      const lineItem = payment?.lineItems.find(li => li.id === match.lineItemId);
-      const expectation = expectations.find(e => e.id === match.expectationId);
+      // The IDs in pending_matches ARE the Zoho record IDs (stored during cache download)
+      const hasAllIds = match.paymentId && match.lineItemId && match.expectationId;
       
       return {
         match,
-        resolved: payment && lineItem && expectation ? {
-          paymentZohoId: payment.zohoId || payment.id,
-          lineItemZohoId: lineItem.zohoId || lineItem.id,
-          expectationZohoId: expectation.zohoId || expectation.id,
+        resolved: hasAllIds ? {
+          paymentZohoId: match.paymentId,
+          lineItemZohoId: match.lineItemId,
+          expectationZohoId: match.expectationId,
           matchedAmount: match.matchedAmount,
           variance: match.variance,
           variancePercentage: match.variancePercentage,
