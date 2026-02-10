@@ -9,7 +9,7 @@ import { FileUploadStep } from './steps/FileUploadStep';
 import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
 import { MappingReviewStep } from './steps/MappingReviewStep';
 import { ValidationStep } from './steps/ValidationStep';
-import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, DefaultFieldValue } from '../types';
+import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, FieldMappingConfig, DefaultFieldValue } from '../types';
 
 type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
 
