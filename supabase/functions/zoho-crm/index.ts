@@ -787,6 +787,7 @@ serve(async (req) => {
         }
 
         const batchPayload = await batchResponse.json();
+        console.log(`[Zoho] Batch response:`, JSON.stringify(batchPayload, null, 2));
 
         // Parse per-record results
         const results = (batchPayload?.data || []).map((item: any, idx: number) => ({
@@ -795,6 +796,7 @@ serve(async (req) => {
           id: item?.details?.id || null,
           code: item?.code || null,
           message: item?.message || null,
+          details: item?.details || null,
         }));
 
         const successCount = results.filter((r: any) => r.status === "success").length;
