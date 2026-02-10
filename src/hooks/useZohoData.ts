@@ -219,9 +219,10 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform payments
       const payments: Payment[] = zohoPayments.map(zp => {
-        // Payment_Provider is a lookup - use the name directly for matching with expectations
-        // Expectations use Provider_ID (picklist) which returns the provider name directly
-        const providerName = zp.Payment_Provider?.name || 'Unknown Provider';
+        // Payment_Provider is a lookup - resolve through providerMap (uses Provider_Group for hierarchy)
+        const rawProviderName = zp.Payment_Provider?.name || 'Unknown Provider';
+        const providerId = zp.Payment_Provider?.id;
+        const providerName = (providerId && providerMap.get(providerId)) || rawProviderName;
         
         const paymentLineItems = lineItemsByPayment.get(zp.id) || [];
         
