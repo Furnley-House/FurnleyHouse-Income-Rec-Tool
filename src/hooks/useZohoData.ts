@@ -272,8 +272,10 @@ export function useZohoData(): UseZohoDataReturn {
 
       // Transform expectations
       const expectations: Expectation[] = zohoExpectations.map(ze => {
-        // Provider is a lookup field - use the name for display and matching
-        const providerName = ze.Provider?.name || 'Unknown Provider';
+        // Provider is a lookup field - resolve through providerMap (uses Provider_Group for hierarchy)
+        const rawProviderName = ze.Provider?.name || 'Unknown Provider';
+        const providerId = ze.Provider?.id;
+        const providerName = (providerId && providerMap.get(providerId)) || rawProviderName;
 
         const expectedAmount = coerceCurrency(ze.Expected_Fee_Amount);
         const allocatedAmount = coerceCurrency(ze.Allocated_Amount);
