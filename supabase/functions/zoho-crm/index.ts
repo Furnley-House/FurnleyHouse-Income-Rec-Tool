@@ -763,7 +763,6 @@ serve(async (req) => {
             Match_Method: r.matchMethod || "manual",
             Match_Quality: r.matchQuality || "good",
             Notes: r.notes || "",
-            Matched_By: "Reconciliation Tool",
             Matched_At: now,
             Confirmed: true,
           })),
