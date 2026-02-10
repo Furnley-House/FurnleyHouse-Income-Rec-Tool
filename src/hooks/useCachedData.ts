@@ -89,35 +89,44 @@ export function useCachedData(): UseCachedDataReturn {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch payments with their line items
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('cached_payments')
-        .select('*');
+      // Helper to fetch all rows with pagination (Supabase default limit is 1000)
+      const fetchPaginated = async (table: 'cached_payments' | 'cached_line_items' | 'cached_expectations') => {
+        const rows: any[] = [];
+        const batchSize = 1000;
+        let offset = 0;
+        let hasMore = true;
+        while (hasMore) {
+          const { data, error: fetchError } = await supabase
+            .from(table)
+            .select('*')
+            .range(offset, offset + batchSize - 1);
+          if (fetchError) throw new Error(`${table}: ${fetchError.message}`);
+          if (data && data.length > 0) {
+            rows.push(...data);
+            offset += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
+        }
+        return rows;
+      };
 
-      if (paymentsError) throw new Error(paymentsError.message);
-
-      const { data: lineItemsData, error: lineItemsError } = await supabase
-        .from('cached_line_items')
-        .select('*');
-
-      if (lineItemsError) throw new Error(lineItemsError.message);
-
-      const { data: expectationsData, error: expectationsError } = await supabase
-        .from('cached_expectations')
-        .select('*');
-
-      if (expectationsError) throw new Error(expectationsError.message);
+      // Fetch all data with pagination
+      const paymentsData = await fetchPaginated('cached_payments') as CachedPaymentRow[];
+      const lineItemsData = await fetchPaginated('cached_line_items') as CachedLineItemRow[];
+      const expectationsData = await fetchPaginated('cached_expectations') as CachedExpectationRow[];
 
       // Group line items by payment
       const lineItemsByPayment = new Map<string, CachedLineItemRow[]>();
-      (lineItemsData as CachedLineItemRow[]).forEach(li => {
+      lineItemsData.forEach(li => {
         const existing = lineItemsByPayment.get(li.payment_id) || [];
         existing.push(li);
         lineItemsByPayment.set(li.payment_id, existing);
       });
 
       // Transform to app types
-      const payments: Payment[] = (paymentsData as CachedPaymentRow[]).map(p => {
+      const payments: Payment[] = paymentsData.map(p => {
         const lineItems: PaymentLineItem[] = (lineItemsByPayment.get(p.id) || []).map(li => ({
           id: li.id,
           zohoId: li.zoho_record_id || undefined,
@@ -150,7 +159,7 @@ export function useCachedData(): UseCachedDataReturn {
         };
       });
 
-      const expectations: Expectation[] = (expectationsData as CachedExpectationRow[]).map(e => ({
+      const expectations: Expectation[] = expectationsData.map(e => ({
         id: e.id,
         zohoId: e.zoho_record_id || undefined,
         clientName: e.client_name || 'Unknown Client',
@@ -170,7 +179,7 @@ export function useCachedData(): UseCachedDataReturn {
         matchedToPayments: [],
       }));
 
-      console.log(`[Cache] Loaded ${payments.length} payments with ${lineItemsData?.length || 0} line items, ${expectations.length} expectations`);
+      console.log(`[Cache] Loaded ${payments.length} payments with ${lineItemsData.length} line items, ${expectations.length} expectations`);
       return { payments, expectations };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load from cache';
@@ -257,11 +266,16 @@ export function useCachedData(): UseCachedDataReturn {
           zoho_record_id: e.zohoId || e.id,
         }));
 
-        const { error: expectationsError } = await supabase
-          .from('cached_expectations')
-          .insert(expectationRows);
+        // Insert in batches to handle large datasets
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < expectationRows.length; i += BATCH_SIZE) {
+          const batch = expectationRows.slice(i, i + BATCH_SIZE);
+          const { error: expectationsError } = await supabase
+            .from('cached_expectations')
+            .insert(batch);
 
-        if (expectationsError) throw new Error(`Expectations: ${expectationsError.message}`);
+          if (expectationsError) throw new Error(`Expectations batch ${i}: ${expectationsError.message}`);
+        }
       }
 
       console.log(`[Cache] Saved ${payments.length} payments, ${expectations.length} expectations`);
