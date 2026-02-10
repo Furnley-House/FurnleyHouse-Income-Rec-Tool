@@ -81,7 +81,7 @@ export function ValidationStep({
       activeMappings,
       ignoredCount: mappings.filter(m => m.ignored).length,
     };
-  }, [mappings]);
+  }, [mappings, defaultValues]);
 
   const effectiveRowCount = fileInputs.csvData.totalRows - rowOffset;
 
