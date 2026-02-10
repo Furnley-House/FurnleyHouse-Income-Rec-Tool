@@ -18,12 +18,13 @@ import {
   Calendar,
   Hash
 } from 'lucide-react';
-import { FieldMapping, FileUploadInputs, PaymentHeaderInputs, INTERNAL_FIELDS } from '../../types';
+import { FieldMapping, DefaultFieldValue, FileUploadInputs, PaymentHeaderInputs, INTERNAL_FIELDS } from '../../types';
 
 interface ValidationStepProps {
   fileInputs: FileUploadInputs;
   paymentHeader: PaymentHeaderInputs;
   mappings: FieldMapping[];
+  defaultValues?: DefaultFieldValue[];
   rowOffset: number;
   onBack: () => void;
   onConfirm: () => void;
