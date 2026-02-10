@@ -145,6 +145,7 @@ export interface WizardState {
   aiResult: AIMappingResult | null;
   finalMappings: FieldMapping[];
   defaultValues: DefaultFieldValue[];
+  fieldConfigs: Record<string, FieldMappingConfig>;  // Full configs including valueMappings
   rowOffset: number;
 }
 
