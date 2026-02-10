@@ -128,7 +128,70 @@ export function useZohoSync() {
   };
 
   /**
-   * Sync multiple matches at once (batch operation)
+   * Sync a batch of up to 100 matches in a single Zoho API call.
+   * Returns per-record results so the caller can track which succeeded.
+   */
+  const syncMatchBatch = async (
+    matches: Array<{
+      paymentZohoId: string;
+      lineItemZohoId: string;
+      expectationZohoId: string;
+      matchedAmount: number;
+      variance: number;
+      variancePercentage: number;
+      matchType: string;
+      matchMethod: string;
+      matchQuality: string;
+      notes: string;
+    }>
+  ): Promise<{ successCount: number; failedCount: number; results: Array<{ index: number; status: string }> }> => {
+    console.log(`[ZohoSync] Batch syncing ${matches.length} matches`);
+
+    const { data, error } = await supabase.functions.invoke('zoho-crm', {
+      body: {
+        action: 'createMatchBatch',
+        params: {
+          records: matches.map(m => ({
+            paymentId: m.paymentZohoId,
+            lineItemId: m.lineItemZohoId,
+            expectationId: m.expectationZohoId,
+            matchedAmount: m.matchedAmount,
+            variance: m.variance,
+            variancePercentage: m.variancePercentage,
+            matchType: m.matchType,
+            matchMethod: m.matchMethod,
+            matchQuality: m.matchQuality,
+            notes: m.notes,
+          })),
+        },
+      },
+    });
+
+    if (error) {
+      console.error('[ZohoSync] Batch sync error:', error);
+      throw new Error(error.message);
+    }
+
+    if (!data?.success) {
+      if (data?.code === 'ZOHO_RATE_LIMIT') {
+        const err = new Error(data?.error || 'Rate limited');
+        (err as any).isRateLimit = true;
+        (err as any).retryAfterSeconds = data?.retryAfterSeconds || 60;
+        throw err;
+      }
+      throw new Error(data?.error || 'Batch sync failed');
+    }
+
+    const batchData = data.data;
+    return {
+      successCount: batchData.successCount,
+      failedCount: batchData.failedCount,
+      results: batchData.batchResults || [],
+    };
+  };
+
+  /**
+   * Sync multiple matches at once (batch operation) - LEGACY, kept for compatibility
    */
   const syncMatches = async (matches: MatchSyncData[]): Promise<{ success: number; failed: number }> => {
     let success = 0;
