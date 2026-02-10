@@ -21,11 +21,13 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { FieldMappingRow } from '../FieldMappingRow';
+import { autoSuggestValueMappings } from '../ValueMappingPanel';
 import { 
   FieldMapping, 
   FieldMappingConfig,
   AIMappingResult, 
   INTERNAL_FIELDS, 
+  FIELD_VALIDATION,
   FileUploadInputs, 
   PaymentHeaderInputs,
   DefaultFieldValue,
@@ -37,7 +39,7 @@ interface MappingReviewStepProps {
   aiResult: AIMappingResult;
   initialDefaults?: DefaultFieldValue[];
   onBack: () => void;
-  onComplete: (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[]) => void;
+  onComplete: (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[], configs: Record<string, FieldMappingConfig>) => void;
 }
 
 const confidenceColors = {
@@ -56,6 +58,21 @@ export function MappingReviewStep({
 }: MappingReviewStepProps) {
   const [rowOffset, setRowOffset] = useState(aiResult.suggestedRowOffset);
   
+  // Compute unique values per CSV column (for value mapping on enum fields)
+  const uniqueValuesByColumn = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    const rows = fileInputs.csvData.rows;
+    for (const col of fileInputs.csvData.columns) {
+      const values = new Set<string>();
+      for (const row of rows) {
+        const val = row[col.header]?.trim();
+        if (val) values.add(val);
+      }
+      result[col.header] = Array.from(values).sort();
+    }
+    return result;
+  }, [fileInputs]);
+
   // Initialize field configs from AI suggestions
   const [fieldConfigs, setFieldConfigs] = useState<Record<string, FieldMappingConfig>>(() => {
     const configs: Record<string, FieldMappingConfig> = {};
@@ -68,7 +85,6 @@ export function MappingReviewStep({
       const initialDefault = initialDefaults.find(d => d.targetField === field.value && d.enabled);
       
       if (initialDefault) {
-        // Use existing default
         configs[field.value] = {
           targetField: field.value,
           source: initialDefault.source,
@@ -76,21 +92,26 @@ export function MappingReviewStep({
           hardcodedValue: initialDefault.hardcodedValue,
         };
       } else if (aiMapping) {
-        // Use AI suggestion
+        // Use AI suggestion — auto-suggest value mappings for enum fields
+        const validation = FIELD_VALIDATION[field.value];
+        let valueMappings: Record<string, string> | undefined;
+        if (validation?.type === 'enum' && validation.options) {
+          const uniqueVals = uniqueValuesByColumn[aiMapping.csvColumn] || [];
+          valueMappings = autoSuggestValueMappings(uniqueVals, validation.options);
+        }
         configs[field.value] = {
           targetField: field.value,
           source: 'csv',
           csvColumn: aiMapping.csvColumn,
+          valueMappings,
         };
       } else if (field.value === 'payment_date') {
-        // Default payment_date to header inheritance
         configs[field.value] = {
           targetField: field.value,
           source: 'header',
           headerField: 'paymentDate',
         };
       } else {
-        // Default to CSV with no column selected
         configs[field.value] = {
           targetField: field.value,
           source: 'csv',
@@ -153,7 +174,7 @@ export function MappingReviewStep({
       }
     });
 
-    onComplete(mappings, rowOffset, defaults);
+    onComplete(mappings, rowOffset, defaults, fieldConfigs);
   };
 
   // Count how many required fields are configured
@@ -268,6 +289,7 @@ export function MappingReviewStep({
               <tbody>
                 {INTERNAL_FIELDS.map((field) => {
                   const aiMapping = getAIMapping(field.value);
+                  const csvCol = fieldConfigs[field.value]?.csvColumn;
                   return (
                     <FieldMappingRow
                       key={field.value}
@@ -279,6 +301,7 @@ export function MappingReviewStep({
                       paymentHeader={paymentHeader}
                       aiSuggestedColumn={aiMapping?.csvColumn}
                       aiConfidence={aiMapping?.confidence}
+                      uniqueCsvValues={csvCol ? uniqueValuesByColumn[csvCol] : undefined}
                       onChange={(config) => updateFieldConfig(field.value, config)}
                     />
                   );

@@ -9,7 +9,7 @@ import { FileUploadStep } from './steps/FileUploadStep';
 import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
 import { MappingReviewStep } from './steps/MappingReviewStep';
 import { ValidationStep } from './steps/ValidationStep';
-import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, DefaultFieldValue } from '../types';
+import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, FieldMappingConfig, DefaultFieldValue } from '../types';
 
 type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
 
@@ -33,6 +33,7 @@ export function CSVMapperPage() {
     aiResult: null,
     finalMappings: [],
     defaultValues: [],
+    fieldConfigs: {},
     rowOffset: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,11 +77,12 @@ export function CSVMapperPage() {
     setCurrentStep('upload');
   };
 
-  const handleReviewComplete = (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[]) => {
+  const handleReviewComplete = (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[], configs: Record<string, FieldMappingConfig>) => {
     setWizardState(prev => ({ 
       ...prev, 
       finalMappings: mappings,
       defaultValues: defaults,
+      fieldConfigs: configs,
       rowOffset,
     }));
     setCurrentStep('validation');
@@ -101,7 +103,13 @@ export function CSVMapperPage() {
     // Then check CSV mapping
     const mapping = wizardState.finalMappings.find(m => m.targetField === targetField && !m.ignored);
     if (mapping) {
-      return row[mapping.csvColumn] || '';
+      let rawValue = row[mapping.csvColumn] || '';
+      // Apply value mappings for enum fields
+      const config = wizardState.fieldConfigs[targetField];
+      if (config?.valueMappings && rawValue && config.valueMappings[rawValue]) {
+        rawValue = config.valueMappings[rawValue];
+      }
+      return rawValue;
     }
     return '';
   }, [wizardState]);
