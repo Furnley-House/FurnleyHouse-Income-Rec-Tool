@@ -47,10 +47,11 @@ export function SessionHeader() {
   const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
   const { saveToCache, loadFromCache, getPendingMatches, markMatchesSynced, isLoading: isCacheLoading } = useCachedData();
   const { syncStatus, refresh: refreshSyncStatus, updateLastDownload, updateLastSync } = useSyncStatus();
-  const { syncMatch } = useZohoSync();
+  const { syncMatchBatch } = useZohoSync();
   
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   
   // Load pending match count on mount and when matches change
@@ -155,7 +156,7 @@ export function SessionHeader() {
     }
   };
   
-  // Sync pending matches to Zoho
+  // Sync pending matches to Zoho using batch API (up to 100 per call)
   const handleSyncToZoho = async () => {
     const pending = await getPendingMatches();
     if (!pending || pending.length === 0) {
@@ -164,67 +165,88 @@ export function SessionHeader() {
     }
     
     setIsSyncing(true);
-    toast.info(`Syncing ${pending.length} matches to Zoho...`);
+    setSyncProgress({ done: 0, total: pending.length });
+    toast.info(`Syncing ${pending.length} matches to Zoho in batches of 100...`);
     
-    let successCount = 0;
-    let failCount = 0;
-    const syncedIds: string[] = [];
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    const allSyncedIds: string[] = [];
     
-    for (const match of pending) {
-      // Find the payment and line item from store
+    // Build batch records with resolved Zoho IDs
+    const batchItems = pending.map(match => {
       const payment = payments.find(p => p.id === match.paymentId);
       const lineItem = payment?.lineItems.find(li => li.id === match.lineItemId);
       const expectation = expectations.find(e => e.id === match.expectationId);
       
-      if (!payment || !lineItem || !expectation) {
-        console.warn('[Sync] Missing data for match:', match);
-        failCount++;
-        continue;
-      }
-      
-      try {
-        // Use skipSecondaryUpdates=true for batch sync to reduce API calls from 3 to 1 per match
-        const success = await syncMatch({
-          paymentId: match.paymentId,
+      return {
+        match,
+        resolved: payment && lineItem && expectation ? {
           paymentZohoId: payment.zohoId || payment.id,
-          lineItemId: match.lineItemId,
           lineItemZohoId: lineItem.zohoId || lineItem.id,
-          expectationId: match.expectationId,
           expectationZohoId: expectation.zohoId || expectation.id,
           matchedAmount: match.matchedAmount,
           variance: match.variance,
           variancePercentage: match.variancePercentage,
           matchType: 'full',
           matchMethod: 'manual',
-          matchQuality: (match.matchQuality as 'perfect' | 'good' | 'acceptable' | 'warning') || 'good',
+          matchQuality: match.matchQuality || 'good',
           notes: match.notes || '',
-        }, true);
+        } : null,
+      };
+    });
+    
+    // Count unresolved
+    const unresolved = batchItems.filter(b => !b.resolved);
+    if (unresolved.length > 0) {
+      console.warn(`[Sync] ${unresolved.length} matches have missing data, skipping`);
+      totalFailed += unresolved.length;
+    }
+    
+    const resolved = batchItems.filter(b => b.resolved);
+    
+    // Process in chunks of 100
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < resolved.length; i += BATCH_SIZE) {
+      const chunk = resolved.slice(i, i + BATCH_SIZE);
+      
+      try {
+        const result = await syncMatchBatch(chunk.map(c => c.resolved!));
         
-        if (success) {
-          successCount++;
-          syncedIds.push(match.id);
-        } else {
-          failCount++;
-        }
+        totalSuccess += result.successCount;
+        totalFailed += result.failedCount;
+        
+        // Mark successful matches for DB update
+        result.results.forEach((r, idx) => {
+          if (r.status === 'success') {
+            allSyncedIds.push(chunk[idx].match.id);
+          }
+        });
+        
+        setSyncProgress({ done: totalSuccess + totalFailed + unresolved.length, total: pending.length });
+        
       } catch (err: any) {
         if (err?.isRateLimit) {
           const retrySeconds = err.retryAfterSeconds || 60;
           setCountdown(retrySeconds);
-          toast.error(`Zoho rate limited after ${successCount} synced. Retry in ${retrySeconds}s.`, {
-            description: `${pending.length - successCount - failCount} matches remaining`,
+          toast.error(`Zoho rate limited after ${totalSuccess} synced. Retry in ${retrySeconds}s.`, {
+            description: `${pending.length - totalSuccess - totalFailed} matches remaining`,
           });
           break;
         }
-        failCount++;
+        // Whole batch failed
+        totalFailed += chunk.length;
+        console.error('[Sync] Batch failed:', err);
       }
       
-      // Delay between syncs to avoid Zoho rate limits (500ms between each)
-      await new Promise(r => setTimeout(r, 500));
+      // Small delay between batches (2s is plenty when doing 100 per call)
+      if (i + BATCH_SIZE < resolved.length) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
     
-    // Mark synced matches
-    if (syncedIds.length > 0) {
-      await markMatchesSynced(syncedIds);
+    // Mark synced matches in DB
+    if (allSyncedIds.length > 0) {
+      await markMatchesSynced(allSyncedIds);
       await updateLastSync();
       await refreshSyncStatus();
     }
@@ -234,11 +256,12 @@ export function SessionHeader() {
     setPendingCount(remainingPending?.length || 0);
     
     setIsSyncing(false);
+    setSyncProgress(null);
     
-    if (failCount === 0) {
-      toast.success(`Synced ${successCount} matches to Zoho`);
+    if (totalFailed === 0) {
+      toast.success(`Synced ${totalSuccess} matches to Zoho`);
     } else {
-      toast.warning(`Synced ${successCount} matches, ${failCount} failed`);
+      toast.warning(`Synced ${totalSuccess} matches, ${totalFailed} failed`);
     }
   };
   
@@ -358,8 +381,10 @@ export function SessionHeader() {
             ) : (
               <CheckCircle2 className="h-4 w-4" />
             )}
-            Sync
-            {hasPendingMatches && (
+            {isSyncing && syncProgress
+              ? `${syncProgress.done}/${syncProgress.total}`
+              : 'Sync'}
+            {!isSyncing && hasPendingMatches && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                 {pendingCount}
               </Badge>
