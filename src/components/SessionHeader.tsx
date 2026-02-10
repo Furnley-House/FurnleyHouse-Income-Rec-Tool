@@ -248,6 +248,65 @@ export function SessionHeader() {
       await markMatchesSynced(allSyncedIds);
       await updateLastSync();
       await refreshSyncStatus();
+      
+      // Post-sync: update Bank_Payment_Lines and Expectations statuses in Zoho
+      // Collect the synced matches to build update payloads
+      const syncedMatches = resolved
+        .filter(b => allSyncedIds.includes(b.match.id))
+        .map(b => b.resolved!);
+      
+      if (syncedMatches.length > 0) {
+        toast.info('Updating line item and expectation statuses in Zoho...');
+        
+        try {
+          // Update Bank_Payment_Lines: set status to 'matched' and link the expectation
+          const lineItemUpdates = syncedMatches.map(m => ({
+            id: m.lineItemZohoId,
+            Status: 'matched',
+            Matched_Expectation: { id: m.expectationZohoId },
+          }));
+          
+          const lineResult = await updateRecordsBatch('Bank_Payment_Lines', lineItemUpdates);
+          console.log(`[Sync] Line items updated: ${lineResult.successCount} success, ${lineResult.failedCount} failed`);
+          
+          // Small delay between module updates
+          await new Promise(r => setTimeout(r, 2000));
+          
+          // Update Expectations: set status to 'matched' and allocated amount
+          // De-duplicate by expectation ID (multiple line items may match same expectation)
+          const expectationMap = new Map<string, { id: string; allocatedAmount: number }>();
+          for (const m of syncedMatches) {
+            const existing = expectationMap.get(m.expectationZohoId);
+            expectationMap.set(m.expectationZohoId, {
+              id: m.expectationZohoId,
+              allocatedAmount: (existing?.allocatedAmount || 0) + m.matchedAmount,
+            });
+          }
+          
+          const expectationUpdates = Array.from(expectationMap.values()).map(e => ({
+            id: e.id,
+            Status: 'matched',
+            Allocated_Amount: e.allocatedAmount,
+            Remaining_Amount: 0,
+          }));
+          
+          const expResult = await updateRecordsBatch('Expectations', expectationUpdates);
+          console.log(`[Sync] Expectations updated: ${expResult.successCount} success, ${expResult.failedCount} failed`);
+          
+          if (lineResult.failedCount > 0 || expResult.failedCount > 0) {
+            toast.warning(`Status updates: ${lineResult.failedCount} line items and ${expResult.failedCount} expectations failed to update`);
+          } else {
+            toast.success('Line items and expectations updated in Zoho');
+          }
+        } catch (statusErr: any) {
+          if (statusErr?.isRateLimit) {
+            toast.warning('Rate limited while updating statuses — matches were created but statuses need manual update');
+          } else {
+            console.error('[Sync] Status update error:', statusErr);
+            toast.warning('Match records created but status updates failed — you may need to update statuses manually');
+          }
+        }
+      }
     }
     
     // Update pending count
