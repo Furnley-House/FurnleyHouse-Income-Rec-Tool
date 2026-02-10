@@ -738,6 +738,79 @@ serve(async (req) => {
         break;
       }
 
+      case "createMatchBatch": {
+        // Create up to 100 match records in a single Zoho API call
+        const apiDomain = "https://www.zohoapis.eu";
+        const records = params.records;
+
+        if (!Array.isArray(records) || records.length === 0) {
+          throw new Error("records array is required for createMatchBatch");
+        }
+
+        if (records.length > 100) {
+          throw new Error("Maximum 100 records per batch (Zoho API limit)");
+        }
+
+        const now = formatZohoDateTime(new Date());
+        const batchData = {
+          data: records.map((r: any) => ({
+            Bank_Payment_Ref_Match: r.paymentId,
+            Payment_Line_Match: r.lineItemId,
+            Expectation: r.expectationId,
+            Matched_Amount: r.matchedAmount,
+            Variance: r.variance || 0,
+            Variance_Percentage: r.variancePercentage || 0,
+            Match_Type: r.matchType || "full",
+            Match_Method: r.matchMethod || "manual",
+            Match_Quality: r.matchQuality || "good",
+            Notes: r.notes || "",
+            Matched_By: "Reconciliation Tool",
+            Matched_At: now,
+            Confirmed: true,
+          })),
+          trigger: [] // Skip workflow triggers for batch performance
+        };
+
+        console.log(`[Zoho] Creating batch of ${records.length} match records`);
+
+        const batchResponse = await fetch(`${apiDomain}/crm/v6/Payment_Matches`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Zoho-oauthtoken ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(batchData),
+        });
+
+        if (batchResponse.status === 429) {
+          throw new ZohoRateLimitError("Zoho API rate limited during batch insert", 60);
+        }
+
+        const batchPayload = await batchResponse.json();
+
+        // Parse per-record results
+        const results = (batchPayload?.data || []).map((item: any, idx: number) => ({
+          index: idx,
+          status: item?.status || "error",
+          id: item?.details?.id || null,
+          code: item?.code || null,
+          message: item?.message || null,
+        }));
+
+        const successCount = results.filter((r: any) => r.status === "success").length;
+        const failedCount = results.length - successCount;
+
+        console.log(`[Zoho] Batch result: ${successCount} success, ${failedCount} failed out of ${records.length}`);
+
+        result = {
+          batchResults: results,
+          successCount,
+          failedCount,
+          totalRequested: records.length,
+        };
+        break;
+      }
+
       case "updateRecord": {
         // Generic update for any module
         const { module, recordId, data } = params;
