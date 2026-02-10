@@ -30,11 +30,11 @@ export function useZohoSync() {
    * Sync a confirmed match to Zoho CRM
    * Creates a Payment_Matches record and updates related records
    */
-  const syncMatch = async (matchData: MatchSyncData): Promise<boolean> => {
+  const syncMatch = async (matchData: MatchSyncData, skipSecondaryUpdates = false): Promise<boolean> => {
     console.log('[ZohoSync] Syncing match to Zoho:', matchData);
 
     try {
-      // 1. Create the match record in Payment_Matches
+      // 1. Create the match record in Payment_Matches (the critical operation)
       const { data: matchResult, error: matchError } = await supabase.functions.invoke('zoho-crm', {
         body: {
           action: 'createMatch',
@@ -72,48 +72,51 @@ export function useZohoSync() {
 
       console.log('[ZohoSync] Match record created:', matchResult);
 
-      // 2. Update the line item status in Bank_Payment_Lines
-      const { data: lineItemResult, error: lineItemError } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'updateRecord',
-          params: {
-            module: 'Bank_Payment_Lines',
-            recordId: matchData.lineItemZohoId,
-            data: {
-              Status: 'matched',
-              Matched_Expectation: matchData.expectationZohoId,
-              Match_Notes: matchData.notes || null,
+      // Skip secondary updates during batch sync to reduce API calls and avoid rate limits
+      if (!skipSecondaryUpdates) {
+        // 2. Update the line item status in Bank_Payment_Lines
+        const { data: lineItemResult, error: lineItemError } = await supabase.functions.invoke('zoho-crm', {
+          body: {
+            action: 'updateRecord',
+            params: {
+              module: 'Bank_Payment_Lines',
+              recordId: matchData.lineItemZohoId,
+              data: {
+                Status: 'matched',
+                Matched_Expectation: matchData.expectationZohoId,
+                Match_Notes: matchData.notes || null,
+              }
             }
           }
+        });
+
+        if (lineItemError) {
+          console.warn('[ZohoSync] Warning: Failed to update line item status:', lineItemError);
+        } else {
+          console.log('[ZohoSync] Line item updated:', lineItemResult);
         }
-      });
 
-      if (lineItemError) {
-        console.warn('[ZohoSync] Warning: Failed to update line item status:', lineItemError);
-      } else {
-        console.log('[ZohoSync] Line item updated:', lineItemResult);
-      }
-
-      // 3. Update the expectation status
-      const { data: expectationResult, error: expectationError } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'updateRecord',
-          params: {
-            module: 'Expectations',
-            recordId: matchData.expectationZohoId,
-            data: {
-              Status: 'matched',
-              Allocated_Amount: matchData.matchedAmount,
-              Remaining_Amount: 0,
+        // 3. Update the expectation status
+        const { data: expectationResult, error: expectationError } = await supabase.functions.invoke('zoho-crm', {
+          body: {
+            action: 'updateRecord',
+            params: {
+              module: 'Expectations',
+              recordId: matchData.expectationZohoId,
+              data: {
+                Status: 'matched',
+                Allocated_Amount: matchData.matchedAmount,
+                Remaining_Amount: 0,
+              }
             }
           }
-        }
-      });
+        });
 
-      if (expectationError) {
-        console.warn('[ZohoSync] Warning: Failed to update expectation status:', expectationError);
-      } else {
-        console.log('[ZohoSync] Expectation updated:', expectationResult);
+        if (expectationError) {
+          console.warn('[ZohoSync] Warning: Failed to update expectation status:', expectationError);
+        } else {
+          console.log('[ZohoSync] Expectation updated:', expectationResult);
+        }
       }
 
       return true;

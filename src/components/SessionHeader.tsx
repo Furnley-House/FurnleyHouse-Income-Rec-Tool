@@ -183,6 +183,7 @@ export function SessionHeader() {
       }
       
       try {
+        // Use skipSecondaryUpdates=true for batch sync to reduce API calls from 3 to 1 per match
         const success = await syncMatch({
           paymentId: match.paymentId,
           paymentZohoId: payment.zohoId || payment.id,
@@ -197,7 +198,7 @@ export function SessionHeader() {
           matchMethod: 'manual',
           matchQuality: (match.matchQuality as 'perfect' | 'good' | 'acceptable' | 'warning') || 'good',
           notes: match.notes || '',
-        });
+        }, true);
         
         if (success) {
           successCount++;
@@ -216,6 +217,9 @@ export function SessionHeader() {
         }
         failCount++;
       }
+      
+      // Delay between syncs to avoid Zoho rate limits (500ms between each)
+      await new Promise(r => setTimeout(r, 500));
     }
     
     // Mark synced matches
