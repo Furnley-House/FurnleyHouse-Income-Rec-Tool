@@ -47,7 +47,7 @@ export function SessionHeader() {
   const { loadZohoData, isLoading: isZohoLoading } = useZohoData();
   const { saveToCache, loadFromCache, getPendingMatches, markMatchesSynced, isLoading: isCacheLoading } = useCachedData();
   const { syncStatus, refresh: refreshSyncStatus, updateLastDownload, updateLastSync } = useSyncStatus();
-  const { syncMatchBatch } = useZohoSync();
+  const { syncMatchBatch, updateRecordsBatch } = useZohoSync();
   
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
