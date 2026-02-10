@@ -39,7 +39,7 @@ interface MappingReviewStepProps {
   aiResult: AIMappingResult;
   initialDefaults?: DefaultFieldValue[];
   onBack: () => void;
-  onComplete: (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[]) => void;
+  onComplete: (mappings: FieldMapping[], rowOffset: number, defaults: DefaultFieldValue[], configs: Record<string, FieldMappingConfig>) => void;
 }
 
 const confidenceColors = {
