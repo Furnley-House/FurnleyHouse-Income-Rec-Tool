@@ -126,7 +126,7 @@ export function useCachedData(): UseCachedDataReturn {
       });
 
       // Transform to app types
-      const payments: Payment[] = (paymentsData as CachedPaymentRow[]).map(p => {
+      const payments: Payment[] = paymentsData.map(p => {
         const lineItems: PaymentLineItem[] = (lineItemsByPayment.get(p.id) || []).map(li => ({
           id: li.id,
           zohoId: li.zoho_record_id || undefined,
