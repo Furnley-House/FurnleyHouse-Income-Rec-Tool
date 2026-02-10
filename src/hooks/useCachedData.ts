@@ -455,15 +455,20 @@ export function useCachedData(): UseCachedDataReturn {
 
   const markMatchesSynced = useCallback(async (matchIds: string[]): Promise<boolean> => {
     try {
-      const { error: updateError } = await supabase
-        .from('pending_matches')
-        .update({
-          synced_to_zoho: true,
-          synced_at: new Date().toISOString(),
-        })
-        .in('id', matchIds);
+      // Chunk updates to avoid PostgREST URL length limits
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < matchIds.length; i += CHUNK_SIZE) {
+        const chunk = matchIds.slice(i, i + CHUNK_SIZE);
+        const { error: updateError } = await supabase
+          .from('pending_matches')
+          .update({
+            synced_to_zoho: true,
+            synced_at: new Date().toISOString(),
+          })
+          .in('id', chunk);
 
-      if (updateError) throw new Error(updateError.message);
+        if (updateError) throw new Error(updateError.message);
+      }
       return true;
     } catch (err) {
       console.error('[Cache] Mark matches synced error:', err);
