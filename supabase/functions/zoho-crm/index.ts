@@ -703,6 +703,7 @@ serve(async (req) => {
         const apiDomain = "https://www.zohoapis.eu";
         const matchData = {
           data: [{
+            Name: `Match-${Date.now()}`,
             Bank_Payment_Ref_Match: { id: params.paymentId },
             Payment_Line_Match: { id: params.lineItemId },
             Expectation: { id: params.expectationId },
@@ -752,7 +753,8 @@ serve(async (req) => {
 
         const now = formatZohoDateTime(new Date());
         const batchData = {
-          data: records.map((r: any) => ({
+          data: records.map((r: any, idx: number) => ({
+            Name: `Match-${Date.now()}-${idx}`,
             Bank_Payment_Ref_Match: { id: r.paymentId },
             Payment_Line_Match: { id: r.lineItemId },
             Expectation: { id: r.expectationId },
