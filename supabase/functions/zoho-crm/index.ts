@@ -703,9 +703,9 @@ serve(async (req) => {
         const apiDomain = "https://www.zohoapis.eu";
         const matchData = {
           data: [{
-            Bank_Payment_Ref_Match: params.paymentId,
-            Payment_Line_Match: params.lineItemId,
-            Expectation: params.expectationId,
+            Bank_Payment_Ref_Match: { id: params.paymentId },
+            Payment_Line_Match: { id: params.lineItemId },
+            Expectation: { id: params.expectationId },
             Matched_Amount: params.matchedAmount,
             Variance: params.variance || 0,
             Variance_Percentage: params.variancePercentage || 0,
