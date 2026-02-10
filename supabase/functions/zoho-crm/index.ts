@@ -703,6 +703,7 @@ serve(async (req) => {
         const apiDomain = "https://www.zohoapis.eu";
         const matchData = {
           data: [{
+            Name: `Match-${Date.now()}`,
             Bank_Payment_Ref_Match: { id: params.paymentId },
             Payment_Line_Match: { id: params.lineItemId },
             Expectation: { id: params.expectationId },
