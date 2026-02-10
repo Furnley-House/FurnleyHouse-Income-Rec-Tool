@@ -138,7 +138,14 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                   aria-expanded={providerOpen}
                   className="w-full justify-between"
                 >
-                  {selectedProvider || "Select provider..."}
+                  {loadingProviders ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading providers...
+                    </span>
+                  ) : (
+                    selectedProvider || "Select provider..."
+                  )}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -148,9 +155,9 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                   <CommandList>
                     <CommandEmpty>No provider found.</CommandEmpty>
                     <CommandGroup>
-                      {PROVIDERS.map((provider) => (
+                      {providers.map((provider) => (
                         <CommandItem
-                          key={provider.id}
+                          key={provider.id || provider.name}
                           value={provider.name}
                           onSelect={(value) => {
                             setSelectedProvider(value);
@@ -164,6 +171,9 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                             )}
                           />
                           {provider.name}
+                          {provider.group && provider.group !== provider.name && (
+                            <span className="ml-2 text-xs text-muted-foreground">({provider.group})</span>
+                          )}
                         </CommandItem>
                       ))}
                     </CommandGroup>
