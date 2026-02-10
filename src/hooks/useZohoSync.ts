@@ -320,6 +320,7 @@ export function useZohoSync() {
 
   return {
     syncMatch,
+    syncMatchBatch,
     syncMatches,
     syncPaymentStatus,
     syncInvalidation,
