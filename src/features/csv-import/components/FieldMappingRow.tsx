@@ -68,6 +68,7 @@ export function FieldMappingRow({
   paymentHeader,
   aiSuggestedColumn,
   aiConfidence,
+  uniqueCsvValues,
   onChange,
 }: FieldMappingRowProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
