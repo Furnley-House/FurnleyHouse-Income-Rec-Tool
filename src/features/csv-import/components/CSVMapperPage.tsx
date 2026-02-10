@@ -33,6 +33,7 @@ export function CSVMapperPage() {
     aiResult: null,
     finalMappings: [],
     defaultValues: [],
+    fieldConfigs: {},
     rowOffset: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
