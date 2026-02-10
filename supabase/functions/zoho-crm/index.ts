@@ -965,6 +965,7 @@ serve(async (req) => {
 
         const paymentPayload = {
           data: [{
+            Name: payment.Payment_Reference || `Payment-${Date.now()}`,
             Payment_Reference: payment.Payment_Reference,
             Bank_Reference: payment.Bank_Reference || payment.Payment_Reference,
             Payment_Date: payment.Payment_Date,
