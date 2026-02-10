@@ -55,9 +55,46 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
   const [paymentReference, setPaymentReference] = useState(initialValues?.paymentReference || '');
   const [paymentAmount, setPaymentAmount] = useState(initialValues?.paymentAmount?.toString() || '');
   const [notes, setNotes] = useState(initialValues?.notes || '');
+  
+  // Dynamic provider list from Zoho
+  const [providers, setProviders] = useState<ZohoProviderOption[]>(FALLBACK_PROVIDERS);
+  const [loadingProviders, setLoadingProviders] = useState(true);
+
+  // Fetch providers from Zoho on mount
+  useEffect(() => {
+    async function fetchProviders() {
+      try {
+        const res = await supabase.functions.invoke('zoho-crm', {
+          body: { action: 'getProviders' },
+        });
+        if (res.data?.success && Array.isArray(res.data.data)) {
+          const zohoProviders: ZohoProviderOption[] = res.data.data
+            .filter((p: any) => p.Name)
+            .map((p: any) => ({
+              id: String(p.id),
+              name: p.Name,
+              group: p.Provider_Group || undefined,
+            }));
+          
+          if (zohoProviders.length > 0) {
+            // Add "Other" option at the end
+            zohoProviders.push({ id: '', name: 'Other' });
+            setProviders(zohoProviders);
+            console.log(`[Providers] Loaded ${zohoProviders.length - 1} providers from Zoho`);
+          }
+        }
+      } catch (err) {
+        console.warn('[Providers] Failed to fetch from Zoho, using fallback list:', err);
+      } finally {
+        setLoadingProviders(false);
+      }
+    }
+    fetchProviders();
+  }, []);
 
   const isOtherProvider = selectedProvider === 'Other';
   const effectiveProvider = isOtherProvider ? customProvider : selectedProvider;
+  const selectedProviderRecord = providers.find(p => p.name === selectedProvider);
   
   const canProceed = effectiveProvider && paymentDate && paymentReference;
 
@@ -66,14 +103,14 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
     
     onComplete({
       providerName: effectiveProvider,
-      providerId: isOtherProvider ? undefined : PROVIDERS.find(p => p.name === selectedProvider)?.id,
+      // Send the Zoho record ID (numeric) for Payment_Provider lookup
+      providerId: isOtherProvider ? undefined : selectedProviderRecord?.id || undefined,
       paymentDate: format(paymentDate!, 'yyyy-MM-dd'),
       paymentReference,
       paymentAmount: paymentAmount ? parseFloat(paymentAmount.replace(/,/g, '')) : undefined,
       notes: notes || undefined,
     });
   };
-
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
