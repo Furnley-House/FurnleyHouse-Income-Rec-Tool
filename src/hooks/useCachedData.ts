@@ -266,11 +266,16 @@ export function useCachedData(): UseCachedDataReturn {
           zoho_record_id: e.zohoId || e.id,
         }));
 
-        const { error: expectationsError } = await supabase
-          .from('cached_expectations')
-          .insert(expectationRows);
+        // Insert in batches to handle large datasets
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < expectationRows.length; i += BATCH_SIZE) {
+          const batch = expectationRows.slice(i, i + BATCH_SIZE);
+          const { error: expectationsError } = await supabase
+            .from('cached_expectations')
+            .insert(batch);
 
-        if (expectationsError) throw new Error(`Expectations: ${expectationsError.message}`);
+          if (expectationsError) throw new Error(`Expectations batch ${i}: ${expectationsError.message}`);
+        }
       }
 
       console.log(`[Cache] Saved ${payments.length} payments, ${expectations.length} expectations`);
