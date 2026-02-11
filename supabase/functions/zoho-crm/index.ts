@@ -1088,6 +1088,118 @@ serve(async (req) => {
         break;
       }
 
+      case "dataCheck": {
+        // Live Zoho check for data conditions on payment line items
+        // Takes an array of policy references, checks:
+        // 1. Which ones exist in the Plans module (Policy_Ref field)
+        // 2. For found plans, which ones have associated Fees records
+        const { policyReferences } = params;
+        if (!Array.isArray(policyReferences) || policyReferences.length === 0) {
+          throw new Error("policyReferences array is required for dataCheck");
+        }
+
+        console.log(`[Zoho] Data check for ${policyReferences.length} policy references`);
+
+        // Deduplicate
+        const uniqueRefs = [...new Set(policyReferences.map((r: string) => r.trim()).filter(Boolean))];
+
+        // Step 1: Query Plans module for each policy reference
+        // Use COQL to batch-check: find all plans whose Policy_Ref matches any of our references
+        const foundPlans: Map<string, string> = new Map(); // policyRef -> planId
+        const batchSize = 50; // COQL IN clause limit
+
+        for (let i = 0; i < uniqueRefs.length; i += batchSize) {
+          const batch = uniqueRefs.slice(i, i + batchSize);
+          const inClause = batch.map((r: string) => `'${r.replace(/'/g, "\\'")}'`).join(", ");
+          const query = `select id, Policy_Ref from Plans where Policy_Ref in (${inClause})`;
+          
+          try {
+            const plans = await queryWithCOQL(accessToken, query);
+            for (const plan of plans) {
+              const policyRef = String(plan.Policy_Ref || "").trim();
+              if (policyRef) {
+                foundPlans.set(policyRef, String(plan.id));
+              }
+            }
+          } catch (err: any) {
+            console.warn(`[Zoho] Plans query batch failed:`, err.message);
+            // If COQL fails (e.g., module doesn't exist), continue with empty results
+          }
+
+          if (i + batchSize < uniqueRefs.length) {
+            await sleep(500);
+          }
+        }
+
+        console.log(`[Zoho] Found ${foundPlans.size} plans out of ${uniqueRefs.length} policy references`);
+
+        // Step 2: For found plans, check if they have Fees records
+        const planIds = [...foundPlans.values()];
+        const plansWithFees = new Set<string>(); // planIds that have fees
+
+        if (planIds.length > 0) {
+          // Query Fees module - look for records linked to these plan IDs
+          // Fees are likely linked to Plans via a lookup field
+          for (let i = 0; i < planIds.length; i += batchSize) {
+            const batch = planIds.slice(i, i + batchSize);
+            const inClause = batch.map((id: string) => `'${id}'`).join(", ");
+            
+            // Try common field names for the plan lookup in Fees
+            const feeModuleFields = await getModuleFields(accessToken, "Fees");
+            const planLookupField = resolveFieldApiName(feeModuleFields, [
+              "Plan", "Plan_Name", "Plans", "Related_Plan", "Plan_ID"
+            ]);
+
+            if (!planLookupField) {
+              console.warn("[Zoho] Could not resolve plan lookup field in Fees module");
+              break;
+            }
+
+            const query = `select id, ${planLookupField} from Fees where ${planLookupField} in (${inClause})`;
+            
+            try {
+              const fees = await queryWithCOQL(accessToken, query);
+              for (const fee of fees) {
+                const planRef = fee[planLookupField];
+                const planId = typeof planRef === "object" && planRef !== null 
+                  ? String((planRef as any).id || planRef)
+                  : String(planRef || "");
+                if (planId) {
+                  plansWithFees.add(planId);
+                }
+              }
+            } catch (err: any) {
+              console.warn(`[Zoho] Fees query batch failed:`, err.message);
+            }
+
+            if (i + batchSize < planIds.length) {
+              await sleep(500);
+            }
+          }
+        }
+
+        console.log(`[Zoho] ${plansWithFees.size} plans have fee records out of ${planIds.length} found plans`);
+
+        // Build results per policy reference
+        const checkResults: Record<string, { planFound: boolean; hasFees: boolean; planId?: string }> = {};
+        for (const ref of uniqueRefs) {
+          const planId = foundPlans.get(ref);
+          checkResults[ref] = {
+            planFound: !!planId,
+            hasFees: planId ? plansWithFees.has(planId) : false,
+            planId: planId || undefined,
+          };
+        }
+
+        result = {
+          totalChecked: uniqueRefs.length,
+          plansFound: foundPlans.size,
+          plansWithFees: plansWithFees.size,
+          results: checkResults,
+        };
+        break;
+      }
+
       case "query": {
         // Execute custom COQL query
         if (!params.query) {
