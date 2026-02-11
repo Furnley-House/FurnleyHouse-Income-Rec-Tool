@@ -262,13 +262,14 @@ export function SessionHeader() {
         toast.info('Updating line item and expectation statuses in Zoho...');
         
         try {
-          // Update Bank_Payment_Lines: set status to 'matched'
+          // Update Bank_Payment_Lines: set status to 'matched' and link expectation
           // Only include records with a valid expectation link (skip data-check items)
           const lineItemUpdates = syncedMatches
             .filter(m => m.expectationZohoId)
             .map(m => ({
               id: m.lineItemZohoId,
               Status: 'matched',
+              Matched_Expectation: { id: m.expectationZohoId },
             }));
           
           let lineResult = { successCount: 0, failedCount: 0 };
