@@ -14,6 +14,7 @@ export interface PaymentLineItem {
   status: 'unmatched' | 'matched' | 'approved_unmatched';
   matchedExpectationId?: string;
   matchNotes?: string;
+  reasonCode?: string;
 }
 
 export interface PendingMatch {
