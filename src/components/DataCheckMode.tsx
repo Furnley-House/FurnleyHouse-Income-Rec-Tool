@@ -13,6 +13,7 @@ import {
   Loader2,
   CircleDollarSign,
   Percent,
+  Copy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PaymentLineItem } from '@/types/reconciliation';
@@ -128,6 +129,29 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
       return result && result.planFound && result.ongoingFeeZeroPercent;
     });
 
+    // Potential Duplicate: policy reference already matched (or pending match) in this payment
+    const alreadyMatchedRefs = new Set<string>();
+    if (payment) {
+      // Refs from already-matched line items in this payment
+      payment.lineItems.forEach(li => {
+        if (li.status === 'matched' && li.planReference?.trim()) {
+          alreadyMatchedRefs.add(li.planReference);
+        }
+      });
+      // Refs from pending matches in this payment
+      pendingMatches.forEach(pm => {
+        const li = payment.lineItems.find(l => l.id === pm.lineItemId);
+        if (li?.planReference?.trim()) {
+          alreadyMatchedRefs.add(li.planReference);
+        }
+      });
+    }
+
+    const potentialDuplicateItems = unmatchedLineItems.filter(li => {
+      if (!li.planReference?.trim()) return false;
+      return alreadyMatchedRefs.has(li.planReference);
+    });
+
     return [
       {
         id: 'no-plan-found',
@@ -160,6 +184,14 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
         description: 'The plan has an ongoing fee record and a valuation, but the fee percentage is zero, so no monthly ongoing expectation is created.',
         icon: Percent,
         affected: ongoingFeeZeroPercentItems,
+      },
+      {
+        id: 'potential-duplicate',
+        reasonCode: 'Potential Duplicate',
+        title: 'Potential Duplicate',
+        description: 'This policy reference has already been matched (or has a pending match) on another line item within this payment. This line may be a duplicate.',
+        icon: Copy,
+        affected: potentialDuplicateItems,
       },
     ];
   }, [zohoResults, unmatchedLineItems]);
@@ -247,6 +279,10 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
               <li className="flex items-start gap-2">
                 <Percent className="h-4 w-4 mt-0.5 text-primary shrink-0" />
                 <span><strong>Ongoing Fee Zero Percent</strong> — Fee percentage is zero, no ongoing expectation created</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Copy className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span><strong>Potential Duplicate</strong> — Policy reference already matched on another line in this payment</span>
               </li>
             </ul>
             <Button onClick={runDataCheck} className="gap-2">
