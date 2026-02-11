@@ -818,9 +818,9 @@ serve(async (req) => {
             if (r.expectationId) {
               record.Expectation = { id: r.expectationId };
             }
-            // Include Reason_Code if provided (for data-check approved items)
+            // Include No_Match_Reason_Code if provided (for data-check approved items)
             if (r.reasonCode) {
-              record.Reason_Code = r.reasonCode;
+              record.No_Match_Reason_Code = r.reasonCode;
             }
             return record;
           }),
