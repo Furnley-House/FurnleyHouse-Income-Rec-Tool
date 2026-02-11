@@ -5,6 +5,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Search, 
   CheckCircle2,
@@ -15,7 +22,8 @@ import {
   X,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  ChevronDown
 } from 'lucide-react';
 import {
   Dialog,
@@ -32,6 +40,7 @@ export function StatementItemList() {
   const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(null);
   const [approveUnmatchedDialogOpen, setApproveUnmatchedDialogOpen] = useState(false);
   const [approveUnmatchedNotes, setApproveUnmatchedNotes] = useState('');
+  const [approveReasonCode, setApproveReasonCode] = useState('Upload Error');
   const [lineItemToApprove, setLineItemToApprove] = useState<string | null>(null);
   const [showMatched, setShowMatched] = useState(false);
   
@@ -97,15 +106,17 @@ export function StatementItemList() {
     e.stopPropagation();
     setLineItemToApprove(lineItemId);
     setApproveUnmatchedNotes('');
+    setApproveReasonCode('Upload Error');
     setApproveUnmatchedDialogOpen(true);
   };
   
   const handleConfirmApproveUnmatched = () => {
-    if (lineItemToApprove && approveUnmatchedNotes.trim()) {
-      markLineItemApprovedUnmatched(lineItemToApprove, approveUnmatchedNotes);
+    if (lineItemToApprove && approveReasonCode) {
+      markLineItemApprovedUnmatched(lineItemToApprove, approveUnmatchedNotes.trim(), approveReasonCode);
       setApproveUnmatchedDialogOpen(false);
       setLineItemToApprove(null);
       setApproveUnmatchedNotes('');
+      setApproveReasonCode('Upload Error');
     }
   };
   
@@ -360,9 +371,26 @@ export function StatementItemList() {
             )}
             
             <div>
-              <p className="text-sm text-muted-foreground mb-2">Approval Notes (required)</p>
+              <p className="text-sm text-muted-foreground mb-2">Reason Code (required)</p>
+              <Select value={approveReasonCode} onValueChange={setApproveReasonCode}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select reason code" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Upload Error">Upload Error</SelectItem>
+                  <SelectItem value="No Plan Found">No Plan Found</SelectItem>
+                  <SelectItem value="No Fee Record">No Fee Record</SelectItem>
+                  <SelectItem value="Zero Valuation">Zero Valuation</SelectItem>
+                  <SelectItem value="Ongoing Fee Zero Percent">Ongoing Fee Zero Percent</SelectItem>
+                  <SelectItem value="Potential Duplicate">Potential Duplicate</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Notes (optional)</p>
               <Textarea
-                placeholder="Please explain why this item doesn't need matching..."
+                placeholder="Any additional context..."
                 value={approveUnmatchedNotes}
                 onChange={(e) => setApproveUnmatchedNotes(e.target.value)}
                 className="resize-none"
@@ -377,7 +405,7 @@ export function StatementItemList() {
             </Button>
             <Button 
               onClick={handleConfirmApproveUnmatched}
-              disabled={!approveUnmatchedNotes.trim()}
+              disabled={!approveReasonCode}
               className="gap-2"
             >
               <CheckCircle2 className="h-4 w-4" />
