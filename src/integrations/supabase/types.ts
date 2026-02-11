@@ -220,13 +220,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "pending_matches_expectation_id_fkey"
-            columns: ["expectation_id"]
-            isOneToOne: false
-            referencedRelation: "cached_expectations"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "pending_matches_line_item_id_fkey"
             columns: ["line_item_id"]
             isOneToOne: false

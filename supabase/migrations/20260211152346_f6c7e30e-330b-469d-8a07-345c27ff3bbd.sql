@@ -1,0 +1,1 @@
+ALTER TABLE public.pending_matches DROP CONSTRAINT pending_matches_expectation_id_fkey;
