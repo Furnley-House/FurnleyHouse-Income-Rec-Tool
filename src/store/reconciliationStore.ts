@@ -33,7 +33,7 @@ interface ReconciliationStore {
   clearPendingMatches: () => void;
   confirmPendingMatches: (notes: string) => void;
   autoMatchCurrentPayment: () => void;
-  markLineItemApprovedUnmatched: (lineItemId: string, notes: string) => void;
+  markLineItemApprovedUnmatched: (lineItemId: string, notes: string, reasonCode?: string) => void;
   bulkMarkDataCheckApproved: (lineItemIds: string[], reasonCode: string, notes: string) => void;
   markPaymentFullyReconciled: (notes: string) => void;
   invalidateExpectation: (expectationId: string, reason: string) => void;
@@ -371,9 +371,12 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     }
   },
   
-  markLineItemApprovedUnmatched: (lineItemId: string, notes: string) => {
+  markLineItemApprovedUnmatched: (lineItemId: string, notes: string, reasonCode?: string) => {
     const { selectedPaymentId, payments, expectations, matches } = get();
     if (!selectedPaymentId) return;
+    
+    const payment = payments.find(p => p.id === selectedPaymentId);
+    if (!payment) return;
     
     const updatedPayments = payments.map(p => {
       if (p.id === selectedPaymentId) {
@@ -382,7 +385,8 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
             return {
               ...li,
               status: 'approved_unmatched' as const,
-              matchNotes: notes
+              matchNotes: notes,
+              reasonCode: reasonCode || 'Upload Error'
             };
           }
           return li;
@@ -399,6 +403,41 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     set({
       payments: updatedPayments,
       statistics: calculateStatistics(updatedPayments, expectations, matches)
+    });
+
+    // Persist to cache and create pending_match for Zoho sync (same as Data Check approvals)
+    const rc = reasonCode || 'Upload Error';
+    const li = payment.lineItems.find(l => l.id === lineItemId);
+    import('@/integrations/supabase/client').then(({ supabase }) => {
+      supabase
+        .from('cached_line_items')
+        .update({ 
+          reason_code: rc, 
+          status: 'approved_unmatched', 
+          match_notes: notes 
+        })
+        .eq('id', lineItemId)
+        .then(({ error }) => {
+          if (error) console.warn('[Skip] Failed to update cached line item', lineItemId, error.message);
+        });
+
+      supabase
+        .from('pending_matches')
+        .insert({
+          payment_id: selectedPaymentId,
+          line_item_id: lineItemId,
+          expectation_id: 'DATA_CHECK_NO_EXPECTATION',
+          matched_amount: li?.amount || 0,
+          variance: 0,
+          variance_percentage: 0,
+          match_quality: 'data-check',
+          notes: `${rc}: ${notes}`,
+          synced_to_zoho: false,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('[Skip] Failed to insert pending match', error.message);
+          else console.log('[Skip] Created pending match for sync');
+        });
     });
   },
 
