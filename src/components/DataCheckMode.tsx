@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,88 +15,33 @@ import {
 import { cn } from '@/lib/utils';
 import { PaymentLineItem } from '@/types/reconciliation';
 
-interface DataCondition {
-  id: string;
-  reasonCode: string;
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  getAffectedItems: (lineItems: PaymentLineItem[], allPlanRefs: Set<string>) => PaymentLineItem[];
+interface DataCheckResult {
+  planFound: boolean;
+  hasFees: boolean;
+  planId?: string;
 }
-
-const DATA_CONDITIONS: DataCondition[] = [
-  {
-    id: 'no-plan-found',
-    reasonCode: 'No Plan Found',
-    title: 'No Plan Found',
-    description: 'The Policy Reference on these line items does not match any known plan in the system. No expectation exists for this reference.',
-    icon: FileQuestion,
-    getAffectedItems: (lineItems, allPlanRefs) => {
-      return lineItems.filter(li => {
-        if (li.status !== 'unmatched') return false;
-        if (!li.planReference || li.planReference.trim() === '') return false;
-        return !allPlanRefs.has(li.planReference);
-      });
-    },
-  },
-  {
-    id: 'no-fee-record',
-    reasonCode: 'No Fee Record',
-    title: 'No Fee Record',
-    description: 'The plan exists in the system but has no associated fee/expectation record for this provider. The plan was found but no expected fee was created.',
-    icon: AlertTriangle,
-    getAffectedItems: (lineItems, allPlanRefs) => {
-      // Line items where the plan reference IS found somewhere in the system
-      // but NOT in the expectations for this provider (already filtered by getRelevantExpectations)
-      // This means: plan ref exists in ALL expectations but not in provider-filtered ones
-      return lineItems.filter(li => {
-        if (li.status !== 'unmatched') return false;
-        if (!li.planReference || li.planReference.trim() === '') return false;
-        // Plan IS known (exists in global expectations) but NOT in the relevant ones
-        return allPlanRefs.has(li.planReference);
-      });
-    },
-  },
-];
 
 interface DataCheckModeProps {
   onComplete: () => void;
 }
 
+type CheckStatus = 'idle' | 'loading' | 'done' | 'error';
+
 export function DataCheckMode({ onComplete }: DataCheckModeProps) {
   const {
     getSelectedPayment,
-    getRelevantExpectations,
-    expectations: allExpectations,
     pendingMatches,
     bulkMarkDataCheckApproved,
   } = useReconciliationStore();
 
   const payment = getSelectedPayment();
-  const relevantExpectations = getRelevantExpectations();
 
+  const [checkStatus, setCheckStatus] = useState<CheckStatus>('idle');
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [zohoResults, setZohoResults] = useState<Record<string, DataCheckResult> | null>(null);
   const [currentConditionIndex, setCurrentConditionIndex] = useState(0);
   const [processedConditions, setProcessedConditions] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // Build sets of known plan references
-  const { allKnownPlanRefs, relevantPlanRefs } = useMemo(() => {
-    const allRefs = new Set<string>();
-    allExpectations.forEach(e => {
-      if (e.planReference && e.planReference.trim() !== '') {
-        allRefs.add(e.planReference);
-      }
-    });
-    const relevantRefs = new Set<string>();
-    relevantExpectations.forEach(e => {
-      if (e.planReference && e.planReference.trim() !== '') {
-        relevantRefs.add(e.planReference);
-      }
-    });
-    return { allKnownPlanRefs: allRefs, relevantPlanRefs: relevantRefs };
-  }, [allExpectations, relevantExpectations]);
-
-  if (!payment) return null;
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-GB', {
@@ -107,57 +53,120 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
 
   // Get unmatched line items (excluding pending matches)
   const pendingLineItemIds = new Set(pendingMatches.map(pm => pm.lineItemId));
-  const unmatchedLineItems = payment.lineItems.filter(
+  const unmatchedLineItems = payment ? payment.lineItems.filter(
     li => li.status === 'unmatched' && !pendingLineItemIds.has(li.id)
-  );
+  ) : [];
 
-  // For "No Plan Found": plan ref not in ANY expectations (global)
-  // For "No Fee Record": plan ref in global expectations but NOT in relevant (provider-filtered) ones
-  const conditionResults = DATA_CONDITIONS.map(condition => {
-    let affected: PaymentLineItem[];
-    if (condition.id === 'no-plan-found') {
-      affected = unmatchedLineItems.filter(li => {
-        if (!li.planReference || li.planReference.trim() === '') return false;
-        return !allKnownPlanRefs.has(li.planReference);
-      });
-    } else {
-      // no-fee-record: plan ref exists globally but not in provider-relevant expectations
-      affected = unmatchedLineItems.filter(li => {
-        if (!li.planReference || li.planReference.trim() === '') return false;
-        return allKnownPlanRefs.has(li.planReference) && !relevantPlanRefs.has(li.planReference);
-      });
+  // Collect unique policy references from unmatched items
+  const policyReferences = useMemo(() => {
+    const refs = new Set<string>();
+    unmatchedLineItems.forEach(li => {
+      if (li.planReference?.trim()) refs.add(li.planReference);
+    });
+    return [...refs];
+  }, [unmatchedLineItems]);
+
+  // Run live Zoho check
+  const runDataCheck = useCallback(async () => {
+    if (policyReferences.length === 0) {
+      setCheckStatus('done');
+      setZohoResults({});
+      return;
     }
-    return { condition, affected };
-  });
+
+    setCheckStatus('loading');
+    setCheckError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('zoho-crm', {
+        body: {
+          action: 'dataCheck',
+          params: { policyReferences },
+        },
+      });
+
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error || 'Data check failed');
+
+      setZohoResults(data.data.results);
+      setCheckStatus('done');
+    } catch (err: any) {
+      setCheckError(err.message);
+      setCheckStatus('error');
+    }
+  }, [policyReferences]);
+
+  // Compute affected items based on Zoho results
+  const conditionResults = useMemo(() => {
+    if (!zohoResults) return [];
+
+    const noPlanItems = unmatchedLineItems.filter(li => {
+      if (!li.planReference?.trim()) return false;
+      const result = zohoResults[li.planReference];
+      return result && !result.planFound;
+    });
+
+    const noFeeItems = unmatchedLineItems.filter(li => {
+      if (!li.planReference?.trim()) return false;
+      const result = zohoResults[li.planReference];
+      return result && result.planFound && !result.hasFees;
+    });
+
+    return [
+      {
+        id: 'no-plan-found',
+        reasonCode: 'No Plan Found',
+        title: 'No Plan Found',
+        description: 'The Policy Reference on these line items does not exist in the Plans module in the CRM. No plan record was found.',
+        icon: FileQuestion,
+        affected: noPlanItems,
+      },
+      {
+        id: 'no-fee-record',
+        reasonCode: 'No Fee Record',
+        title: 'No Fee Record',
+        description: 'The plan exists in the CRM but has no associated fee record. The plan was found but no expected fee was created.',
+        icon: AlertTriangle,
+        affected: noFeeItems,
+      },
+    ];
+  }, [zohoResults, unmatchedLineItems]);
 
   const totalAffected = conditionResults.reduce((sum, r) => sum + r.affected.length, 0);
   const currentResult = conditionResults[currentConditionIndex];
-  const allDone = currentConditionIndex >= DATA_CONDITIONS.length || processedConditions.size === DATA_CONDITIONS.length;
+  const allDone = checkStatus === 'done' && (
+    conditionResults.length === 0 || 
+    currentConditionIndex >= conditionResults.length || 
+    processedConditions.size === conditionResults.length
+  );
 
   const handleAcceptAll = async () => {
     if (!currentResult || currentResult.affected.length === 0) return;
     setIsProcessing(true);
 
     const ids = currentResult.affected.map(li => li.id);
-    const notes = `Data Check: ${currentResult.condition.title} — ${ids.length} items approved`;
+    const notes = `Data Check: ${currentResult.title} — ${ids.length} items approved`;
 
-    bulkMarkDataCheckApproved(ids, currentResult.condition.reasonCode, notes);
+    bulkMarkDataCheckApproved(ids, currentResult.reasonCode, notes);
 
-    setProcessedConditions(prev => new Set([...prev, currentResult.condition.id]));
+    setProcessedConditions(prev => new Set([...prev, currentResult.id]));
     setIsProcessing(false);
 
-    // Auto-advance to next condition
-    if (currentConditionIndex < DATA_CONDITIONS.length - 1) {
+    if (currentConditionIndex < conditionResults.length - 1) {
       setCurrentConditionIndex(currentConditionIndex + 1);
     }
   };
 
   const handleSkip = () => {
-    setProcessedConditions(prev => new Set([...prev, DATA_CONDITIONS[currentConditionIndex].id]));
-    if (currentConditionIndex < DATA_CONDITIONS.length - 1) {
+    if (conditionResults.length > 0) {
+      setProcessedConditions(prev => new Set([...prev, conditionResults[currentConditionIndex].id]));
+    }
+    if (currentConditionIndex < conditionResults.length - 1) {
       setCurrentConditionIndex(currentConditionIndex + 1);
     }
   };
+
+  if (!payment) return null;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background">
@@ -171,7 +180,7 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
             <div>
               <h2 className="font-semibold text-foreground">Data Condition Checks</h2>
               <p className="text-xs text-muted-foreground">
-                Identify and resolve known data issues for {unmatchedLineItems.length} unmatched items
+                Verify {policyReferences.length} unique policy references against the CRM
               </p>
             </div>
           </div>
@@ -181,169 +190,228 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
         </div>
       </div>
 
-      {/* Condition Steps */}
-      <div className="px-4 py-3 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-2">
-          {DATA_CONDITIONS.map((condition, index) => {
-            const result = conditionResults[index];
-            const isProcessed = processedConditions.has(condition.id);
-            const isCurrent = index === currentConditionIndex && !allDone;
-
-            return (
-              <div key={condition.id} className="flex items-center">
-                {index > 0 && <div className="w-6 h-px mx-1 bg-border" />}
-                <button
-                  onClick={() => !isProcessed && setCurrentConditionIndex(index)}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors",
-                    isCurrent && "bg-primary/10 text-primary font-medium ring-1 ring-primary/30",
-                    isProcessed && "text-success",
-                    !isCurrent && !isProcessed && "text-muted-foreground"
-                  )}
-                >
-                  {isProcessed ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  ) : (
-                    <condition.icon className={cn("h-4 w-4", isCurrent ? "text-primary" : "text-muted-foreground")} />
-                  )}
-                  <span>{condition.title}</span>
-                  <Badge variant="outline" className={cn(
-                    "text-xs h-5",
-                    result.affected.length > 0
-                      ? "bg-destructive/10 text-destructive border-destructive/30"
-                      : "bg-muted text-muted-foreground"
-                  )}>
-                    {result.affected.length}
-                  </Badge>
-                </button>
-              </div>
-            );
-          })}
+      {/* Pre-check: Run button */}
+      {checkStatus === 'idle' && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4 max-w-md">
+            <Search className="h-12 w-12 text-primary/50 mx-auto" />
+            <h3 className="text-lg font-semibold">Ready to Check Data Conditions</h3>
+            <p className="text-sm text-muted-foreground">
+              This will verify {policyReferences.length} policy references against the CRM to identify:
+            </p>
+            <ul className="text-sm text-muted-foreground text-left space-y-2 mx-auto max-w-sm">
+              <li className="flex items-start gap-2">
+                <FileQuestion className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span><strong>No Plan Found</strong> — Policy reference doesn't exist in Plans</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span><strong>No Fee Record</strong> — Plan exists but has no fee attached</span>
+              </li>
+            </ul>
+            <Button onClick={runDataCheck} className="gap-2">
+              <Search className="h-4 w-4" />
+              Run Data Check
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {allDone ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center space-y-4">
-              <CheckCircle2 className="h-16 w-16 text-success mx-auto" />
-              <h3 className="text-lg font-semibold">Data Checks Complete</h3>
-              <p className="text-sm text-muted-foreground max-w-md">
-                All data conditions have been reviewed.
-                {totalAffected > 0
-                  ? ` ${totalAffected} items were identified across all conditions.`
-                  : ' No data issues were found.'}
-              </p>
-              <Button onClick={onComplete} className="gap-2">
-                <ArrowRight className="h-4 w-4" />
-                Continue to Manual Match
+      {/* Loading */}
+      {checkStatus === 'loading' && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto" />
+            <h3 className="text-lg font-semibold">Checking CRM Data...</h3>
+            <p className="text-sm text-muted-foreground">
+              Verifying {policyReferences.length} policy references against Plans and Fees modules
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {checkStatus === 'error' && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4 max-w-md">
+            <AlertTriangle className="h-12 w-12 text-destructive mx-auto" />
+            <h3 className="text-lg font-semibold">Data Check Failed</h3>
+            <p className="text-sm text-destructive">{checkError}</p>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={runDataCheck} variant="outline" className="gap-2">
+                <Search className="h-4 w-4" />
+                Retry
+              </Button>
+              <Button variant="ghost" onClick={onComplete}>
+                Skip to Manual Match
               </Button>
             </div>
           </div>
-        ) : currentResult ? (
-          <div className="flex-1 flex flex-col">
-            {/* Condition Description */}
-            <div className="px-4 py-3 border-b border-border">
-              <div className="flex items-start gap-3">
-                <currentResult.condition.icon className="h-5 w-5 text-primary mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="font-medium text-foreground">{currentResult.condition.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{currentResult.condition.description}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {currentResult.affected.length > 0 && (
-                    <Button
-                      onClick={handleAcceptAll}
-                      disabled={isProcessing}
-                      size="sm"
-                      className="gap-2"
-                    >
-                      {isProcessing ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
+        </div>
+      )}
+
+      {/* Results */}
+      {checkStatus === 'done' && zohoResults && (
+        <>
+          {/* Condition Steps */}
+          <div className="px-4 py-3 border-b border-border bg-muted/30">
+            <div className="flex items-center gap-2">
+              {conditionResults.map((condition, index) => {
+                const isProcessed = processedConditions.has(condition.id);
+                const isCurrent = index === currentConditionIndex && !allDone;
+
+                return (
+                  <div key={condition.id} className="flex items-center">
+                    {index > 0 && <div className="w-6 h-px mx-1 bg-border" />}
+                    <button
+                      onClick={() => !isProcessed && setCurrentConditionIndex(index)}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors",
+                        isCurrent && "bg-primary/10 text-primary font-medium ring-1 ring-primary/30",
+                        isProcessed && "text-success",
+                        !isCurrent && !isProcessed && "text-muted-foreground"
                       )}
-                      Accept All ({currentResult.affected.length})
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={handleSkip}>
-                    Skip
-                  </Button>
-                </div>
+                    >
+                      {isProcessed ? (
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                      ) : (
+                        <condition.icon className={cn("h-4 w-4", isCurrent ? "text-primary" : "text-muted-foreground")} />
+                      )}
+                      <span>{condition.title}</span>
+                      <Badge variant="outline" className={cn(
+                        "text-xs h-5",
+                        condition.affected.length > 0
+                          ? "bg-destructive/10 text-destructive border-destructive/30"
+                          : "bg-muted text-muted-foreground"
+                      )}>
+                        {condition.affected.length}
+                      </Badge>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Content */}
+          {allDone ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center space-y-4">
+                <CheckCircle2 className="h-16 w-16 text-success mx-auto" />
+                <h3 className="text-lg font-semibold">Data Checks Complete</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  All data conditions have been reviewed.
+                  {totalAffected > 0
+                    ? ` ${totalAffected} items were identified across all conditions.`
+                    : ' No data issues were found.'}
+                </p>
+                <Button onClick={onComplete} className="gap-2">
+                  <ArrowRight className="h-4 w-4" />
+                  Continue to Manual Match
+                </Button>
               </div>
             </div>
-
-            {/* Affected Items List */}
-            <ScrollArea className="flex-1">
-              {currentResult.affected.length === 0 ? (
-                <div className="flex items-center justify-center h-full py-12">
-                  <div className="text-center space-y-2">
-                    <CheckCircle2 className="h-10 w-10 text-success mx-auto" />
-                    <p className="text-sm font-medium text-foreground">No items affected</p>
-                    <p className="text-xs text-muted-foreground">
-                      No line items match this condition.
-                    </p>
-                    <Button variant="outline" size="sm" onClick={handleSkip} className="mt-2">
-                      Continue
+          ) : currentResult ? (
+            <div className="flex-1 flex flex-col">
+              {/* Condition Description */}
+              <div className="px-4 py-3 border-b border-border">
+                <div className="flex items-start gap-3">
+                  <currentResult.icon className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-medium text-foreground">{currentResult.title}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{currentResult.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {currentResult.affected.length > 0 && (
+                      <Button
+                        onClick={handleAcceptAll}
+                        disabled={isProcessing}
+                        size="sm"
+                        className="gap-2"
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        Accept All ({currentResult.affected.length})
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={handleSkip}>
+                      Skip
                     </Button>
                   </div>
                 </div>
-              ) : (
-                <div className="divide-y divide-border/50">
-                  {/* Table Header */}
-                  <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 text-xs font-medium text-muted-foreground sticky top-0">
-                    <span className="w-48">Client Name</span>
-                    <span className="w-44">Policy Reference</span>
-                    <span className="w-20">Fee Type</span>
-                    <span className="w-20 text-right">Amount</span>
-                  </div>
-                  {currentResult.affected.map(item => (
-                    <div
-                      key={item.id}
-                      className="px-4 py-2 flex items-center gap-2 text-sm hover:bg-muted/30"
-                    >
-                      <span className="w-48 font-medium text-foreground truncate" title={item.clientName}>
-                        {item.clientName}
-                      </span>
-                      <span className="w-44 text-muted-foreground truncate" title={item.planReference}>
-                        {item.planReference}
-                      </span>
-                      <span className="w-20">
-                        {item.feeCategory && (
-                          <Badge variant="outline" className={cn(
-                            "text-xs h-4",
-                            item.feeCategory === 'initial'
-                              ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                              : "bg-blue-500/10 text-blue-600 border-blue-500/30"
-                          )}>
-                            {item.feeCategory === 'initial' ? 'Initial' : 'Ongoing'}
-                          </Badge>
-                        )}
-                      </span>
-                      <span className="w-20 text-right font-semibold tabular-nums">
-                        {formatCurrency(item.amount)}
-                      </span>
+              </div>
+
+              {/* Affected Items List */}
+              <ScrollArea className="flex-1">
+                {currentResult.affected.length === 0 ? (
+                  <div className="flex items-center justify-center h-full py-12">
+                    <div className="text-center space-y-2">
+                      <CheckCircle2 className="h-10 w-10 text-success mx-auto" />
+                      <p className="text-sm font-medium text-foreground">No items affected</p>
+                      <p className="text-xs text-muted-foreground">No line items match this condition.</p>
+                      <Button variant="outline" size="sm" onClick={handleSkip} className="mt-2">
+                        Continue
+                      </Button>
                     </div>
-                  ))}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 text-xs font-medium text-muted-foreground sticky top-0">
+                      <span className="w-48">Client Name</span>
+                      <span className="w-44">Policy Reference</span>
+                      <span className="w-20">Fee Type</span>
+                      <span className="w-20 text-right">Amount</span>
+                    </div>
+                    {currentResult.affected.map(item => (
+                      <div
+                        key={item.id}
+                        className="px-4 py-2 flex items-center gap-2 text-sm hover:bg-muted/30"
+                      >
+                        <span className="w-48 font-medium text-foreground truncate" title={item.clientName}>
+                          {item.clientName}
+                        </span>
+                        <span className="w-44 text-muted-foreground truncate" title={item.planReference}>
+                          {item.planReference}
+                        </span>
+                        <span className="w-20">
+                          {item.feeCategory && (
+                            <Badge variant="outline" className={cn(
+                              "text-xs h-4",
+                              item.feeCategory === 'initial'
+                                ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                                : "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                            )}>
+                              {item.feeCategory === 'initial' ? 'Initial' : 'Ongoing'}
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="w-20 text-right font-semibold tabular-nums">
+                          {formatCurrency(item.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+
+              {/* Footer Summary */}
+              {currentResult.affected.length > 0 && (
+                <div className="px-4 py-2 border-t border-border bg-muted/30 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {currentResult.affected.length} items • Reason: <strong className="text-foreground">{currentResult.reasonCode}</strong>
+                  </span>
+                  <span className="font-bold tabular-nums">
+                    {formatCurrency(currentResult.affected.reduce((sum, li) => sum + li.amount, 0))}
+                  </span>
                 </div>
               )}
-            </ScrollArea>
-
-            {/* Footer Summary */}
-            {currentResult.affected.length > 0 && (
-              <div className="px-4 py-2 border-t border-border bg-muted/30 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {currentResult.affected.length} items • Reason: <strong className="text-foreground">{currentResult.condition.reasonCode}</strong>
-                </span>
-                <span className="font-bold tabular-nums">
-                  {formatCurrency(currentResult.affected.reduce((sum, li) => sum + li.amount, 0))}
-                </span>
-              </div>
-            )}
-          </div>
-        ) : null}
-      </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
