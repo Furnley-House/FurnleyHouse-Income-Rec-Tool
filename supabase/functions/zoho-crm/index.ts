@@ -1122,13 +1122,33 @@ serve(async (req) => {
 
         // Step 1: Query Plans module for each policy reference
         // Use COQL to batch-check: find all plans whose Policy_Ref matches any of our references
+        // Also fetch the valuation field to detect zero-valuation plans
         const foundPlans: Map<string, string> = new Map(); // policyRef -> planId
+        const planValuations: Map<string, number> = new Map(); // policyRef -> valuation amount
         const batchSize = 50; // COQL IN clause limit
+
+        // Resolve the valuation field name dynamically
+        let valuationFieldName: string | null = null;
+        try {
+          const planModuleFields = await getModuleFields(accessToken, "Plans");
+          valuationFieldName = resolveFieldApiName(planModuleFields, [
+            "Valuation", "Current_Valuation", "Plan_Valuation", "Total_Valuation", "Fund_Value", "Current_Value"
+          ]);
+          if (!valuationFieldName) {
+            console.warn("[Zoho] Could not resolve valuation field in Plans module");
+          }
+        } catch (err: any) {
+          console.warn("[Zoho] Failed to get Plans module fields for valuation:", err.message);
+        }
+
+        const selectFields = valuationFieldName 
+          ? `id, Policy_Ref, ${valuationFieldName}` 
+          : `id, Policy_Ref`;
 
         for (let i = 0; i < uniqueRefs.length; i += batchSize) {
           const batch = uniqueRefs.slice(i, i + batchSize);
           const inClause = batch.map((r: string) => `'${r.replace(/'/g, "\\'")}'`).join(", ");
-          const query = `select id, Policy_Ref from Plans where Policy_Ref in (${inClause})`;
+          const query = `select ${selectFields} from Plans where Policy_Ref in (${inClause})`;
           
           try {
             const plans = await queryWithCOQL(accessToken, query);
@@ -1136,6 +1156,11 @@ serve(async (req) => {
               const policyRef = String(plan.Policy_Ref || "").trim();
               if (policyRef) {
                 foundPlans.set(policyRef, String(plan.id));
+                // Store valuation if available
+                if (valuationFieldName && plan[valuationFieldName] !== undefined) {
+                  const val = parseFloat(String(plan[valuationFieldName] || "0"));
+                  planValuations.set(policyRef, isNaN(val) ? 0 : val);
+                }
               }
             }
           } catch (err: any) {
@@ -1198,12 +1223,14 @@ serve(async (req) => {
         console.log(`[Zoho] ${plansWithFees.size} plans have fee records out of ${planIds.length} found plans`);
 
         // Build results per policy reference
-        const checkResults: Record<string, { planFound: boolean; hasFees: boolean; planId?: string }> = {};
+        const checkResults: Record<string, { planFound: boolean; hasFees: boolean; zeroValuation: boolean; planId?: string }> = {};
         for (const ref of uniqueRefs) {
           const planId = foundPlans.get(ref);
+          const valuation = planValuations.get(ref);
           checkResults[ref] = {
             planFound: !!planId,
             hasFees: planId ? plansWithFees.has(planId) : false,
+            zeroValuation: planId ? (valuation !== undefined && valuation === 0) : false,
             planId: planId || undefined,
           };
         }

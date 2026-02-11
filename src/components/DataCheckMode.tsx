@@ -11,6 +11,7 @@ import {
   FileQuestion,
   ArrowRight,
   Loader2,
+  CircleDollarSign,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PaymentLineItem } from '@/types/reconciliation';
@@ -18,6 +19,7 @@ import { PaymentLineItem } from '@/types/reconciliation';
 interface DataCheckResult {
   planFound: boolean;
   hasFees: boolean;
+  zeroValuation: boolean;
   planId?: string;
 }
 
@@ -112,6 +114,12 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
       return result && result.planFound && !result.hasFees;
     });
 
+    const zeroValuationItems = unmatchedLineItems.filter(li => {
+      if (!li.planReference?.trim()) return false;
+      const result = zohoResults[li.planReference];
+      return result && result.planFound && result.zeroValuation;
+    });
+
     return [
       {
         id: 'no-plan-found',
@@ -128,6 +136,14 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
         description: 'The plan exists in the CRM but has no associated fee record. The plan was found but no expected fee was created.',
         icon: AlertTriangle,
         affected: noFeeItems,
+      },
+      {
+        id: 'zero-valuation',
+        reasonCode: 'Zero Valuation',
+        title: 'Zero Valuation',
+        description: 'The plan exists in the CRM but has a zero valuation, which means no expectation would have been created for this period.',
+        icon: CircleDollarSign,
+        affected: zeroValuationItems,
       },
     ];
   }, [zohoResults, unmatchedLineItems]);
@@ -207,6 +223,10 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
               <li className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 mt-0.5 text-primary shrink-0" />
                 <span><strong>No Fee Record</strong> — Plan exists but has no fee attached</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CircleDollarSign className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span><strong>Zero Valuation</strong> — Plan valuation is zero, no expectation created</span>
               </li>
             </ul>
             <Button onClick={runDataCheck} className="gap-2">
