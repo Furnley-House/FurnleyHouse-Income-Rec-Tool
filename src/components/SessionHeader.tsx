@@ -262,15 +262,20 @@ export function SessionHeader() {
         toast.info('Updating line item and expectation statuses in Zoho...');
         
         try {
-          // Update Bank_Payment_Lines: set status to 'matched' and link the expectation
-          const lineItemUpdates = syncedMatches.map(m => ({
-            id: m.lineItemZohoId,
-            Status: 'matched',
-            Matched_Expectation: { id: m.expectationZohoId },
-          }));
+          // Update Bank_Payment_Lines: set status to 'matched'
+          // Only include records with a valid expectation link (skip data-check items)
+          const lineItemUpdates = syncedMatches
+            .filter(m => m.expectationZohoId)
+            .map(m => ({
+              id: m.lineItemZohoId,
+              Status: 'matched',
+            }));
           
-          const lineResult = await updateRecordsBatch('Bank_Payment_Lines', lineItemUpdates);
-          console.log(`[Sync] Line items updated: ${lineResult.successCount} success, ${lineResult.failedCount} failed`);
+          let lineResult = { successCount: 0, failedCount: 0 };
+          if (lineItemUpdates.length > 0) {
+            lineResult = await updateRecordsBatch('Bank_Payment_Lines', lineItemUpdates);
+            console.log(`[Sync] Line items updated: ${lineResult.successCount} success, ${lineResult.failedCount} failed`);
+          }
           
           // Small delay between module updates
           await new Promise(r => setTimeout(r, 2000));
@@ -279,6 +284,7 @@ export function SessionHeader() {
           // De-duplicate by expectation ID (multiple line items may match same expectation)
           const expectationMap = new Map<string, { id: string; allocatedAmount: number }>();
           for (const m of syncedMatches) {
+            if (!m.expectationZohoId) continue; // Skip data-check items
             const existing = expectationMap.get(m.expectationZohoId);
             expectationMap.set(m.expectationZohoId, {
               id: m.expectationZohoId,
@@ -293,8 +299,11 @@ export function SessionHeader() {
             Remaining_Amount: 0,
           }));
           
-          const expResult = await updateRecordsBatch('Expectations', expectationUpdates);
-          console.log(`[Sync] Expectations updated: ${expResult.successCount} success, ${expResult.failedCount} failed`);
+          let expResult = { successCount: 0, failedCount: 0 };
+          if (expectationUpdates.length > 0) {
+            expResult = await updateRecordsBatch('Expectations', expectationUpdates);
+            console.log(`[Sync] Expectations updated: ${expResult.successCount} success, ${expResult.failedCount} failed`);
+          }
           
           if (lineResult.failedCount > 0 || expResult.failedCount > 0) {
             toast.warning(`Status updates: ${lineResult.failedCount} line items and ${expResult.failedCount} expectations failed to update`);
