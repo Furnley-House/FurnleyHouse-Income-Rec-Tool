@@ -406,6 +406,9 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     const { selectedPaymentId, payments, expectations, matches } = get();
     if (!selectedPaymentId) return;
     
+    const payment = payments.find(p => p.id === selectedPaymentId);
+    if (!payment) return;
+    
     const lineItemIdSet = new Set(lineItemIds);
     
     const updatedPayments = payments.map(p => {
@@ -435,21 +438,51 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       statistics: calculateStatistics(updatedPayments, expectations, matches)
     });
 
-    // Persist to cache
-    import('@/hooks/useCacheSync').then(({ syncLineItemStatusToCache }) => {
+    // Persist to cache: update line items AND create pending_matches for sync
+    import('@/integrations/supabase/client').then(({ supabase }) => {
+      // Update line item statuses in cache
       lineItemIds.forEach(id => {
-        syncLineItemStatusToCache(id, 'approved_unmatched', undefined, notes);
-        // Also update reason_code in cache
-        import('@/integrations/supabase/client').then(({ supabase }) => {
-          supabase
-            .from('cached_line_items')
-            .update({ reason_code: reasonCode, status: 'approved_unmatched', match_notes: notes })
-            .eq('id', id)
-            .then(({ error }) => {
-              if (error) console.warn('[DataCheck] Failed to update reason_code for', id, error.message);
-            });
-        });
+        supabase
+          .from('cached_line_items')
+          .update({ 
+            reason_code: reasonCode, 
+            status: 'approved_unmatched', 
+            match_notes: notes 
+          })
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.warn('[DataCheck] Failed to update cached line item', id, error.message);
+          });
       });
+
+      // Create pending_matches records for each approved item (for Zoho sync)
+      const matchedLineItems = lineItemIds.map(id => {
+        const li = payment.lineItems.find(l => l.id === id);
+        return {
+          payment_id: selectedPaymentId,
+          line_item_id: id,
+          expectation_id: 'DATA_CHECK_NO_EXPECTATION', // Placeholder - no real expectation
+          matched_amount: li?.amount || 0,
+          variance: 0,
+          variance_percentage: 0,
+          match_quality: 'data-check',
+          notes: `${reasonCode}: ${notes}`,
+          synced_to_zoho: false,
+        };
+      });
+
+      // Insert in chunks of 100
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < matchedLineItems.length; i += CHUNK_SIZE) {
+        const chunk = matchedLineItems.slice(i, i + CHUNK_SIZE);
+        supabase
+          .from('pending_matches')
+          .insert(chunk)
+          .then(({ error }) => {
+            if (error) console.warn('[DataCheck] Failed to insert pending matches batch', error.message);
+            else console.log(`[DataCheck] Inserted ${chunk.length} pending matches for sync`);
+          });
+      }
     });
   },
   

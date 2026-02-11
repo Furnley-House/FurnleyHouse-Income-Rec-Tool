@@ -135,7 +135,7 @@ export function useZohoSync() {
     matches: Array<{
       paymentZohoId: string;
       lineItemZohoId: string;
-      expectationZohoId: string;
+      expectationZohoId?: string; // Optional for data-check matches
       matchedAmount: number;
       variance: number;
       variancePercentage: number;
@@ -143,6 +143,7 @@ export function useZohoSync() {
       matchMethod: string;
       matchQuality: string;
       notes: string;
+      reasonCode?: string; // For data-check matches
     }>
   ): Promise<{ successCount: number; failedCount: number; results: Array<{ index: number; status: string }> }> => {
     console.log(`[ZohoSync] Batch syncing ${matches.length} matches`);
@@ -154,7 +155,7 @@ export function useZohoSync() {
           records: matches.map(m => ({
             paymentId: m.paymentZohoId,
             lineItemId: m.lineItemZohoId,
-            expectationId: m.expectationZohoId,
+            expectationId: m.expectationZohoId || null, // null for data-check matches
             matchedAmount: m.matchedAmount,
             variance: m.variance,
             variancePercentage: m.variancePercentage,
@@ -162,6 +163,7 @@ export function useZohoSync() {
             matchMethod: m.matchMethod,
             matchQuality: m.matchQuality,
             notes: m.notes,
+            reasonCode: m.reasonCode || null, // For data-check matches
           })),
         },
       },
