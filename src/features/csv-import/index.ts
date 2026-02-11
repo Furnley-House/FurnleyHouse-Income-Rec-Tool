@@ -6,5 +6,6 @@ export { FileUploadStep } from './components/steps/FileUploadStep';
 export { MappingAnalysisStep } from './components/steps/MappingAnalysisStep';
 export { MappingReviewStep } from './components/steps/MappingReviewStep';
 export { ValidationStep } from './components/steps/ValidationStep';
+export { ImportResultStep } from './components/steps/ImportResultStep';
 export { useAIMapping } from './hooks/useAIMapping';
 export * from './types';
