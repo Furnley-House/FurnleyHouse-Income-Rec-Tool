@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Loader2,
   CircleDollarSign,
+  Percent,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PaymentLineItem } from '@/types/reconciliation';
@@ -20,6 +21,7 @@ interface DataCheckResult {
   planFound: boolean;
   hasFees: boolean;
   zeroValuation: boolean;
+  ongoingFeeZeroPercent: boolean;
   planId?: string;
 }
 
@@ -120,6 +122,12 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
       return result && result.planFound && result.zeroValuation;
     });
 
+    const ongoingFeeZeroPercentItems = unmatchedLineItems.filter(li => {
+      if (!li.planReference?.trim()) return false;
+      const result = zohoResults[li.planReference];
+      return result && result.planFound && result.ongoingFeeZeroPercent;
+    });
+
     return [
       {
         id: 'no-plan-found',
@@ -144,6 +152,14 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
         description: 'The plan exists in the CRM but has a zero valuation, which means no expectation would have been created for this period.',
         icon: CircleDollarSign,
         affected: zeroValuationItems,
+      },
+      {
+        id: 'ongoing-fee-zero-percent',
+        reasonCode: 'Ongoing Fee Zero Percent',
+        title: 'Ongoing Fee Zero Percent',
+        description: 'The plan has an ongoing fee record and a valuation, but the fee percentage is zero, so no monthly ongoing expectation is created.',
+        icon: Percent,
+        affected: ongoingFeeZeroPercentItems,
       },
     ];
   }, [zohoResults, unmatchedLineItems]);
@@ -227,6 +243,10 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
               <li className="flex items-start gap-2">
                 <CircleDollarSign className="h-4 w-4 mt-0.5 text-primary shrink-0" />
                 <span><strong>Zero Valuation</strong> — Plan valuation is zero, no expectation created</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Percent className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span><strong>Ongoing Fee Zero Percent</strong> — Fee percentage is zero, no ongoing expectation created</span>
               </li>
             </ul>
             <Button onClick={runDataCheck} className="gap-2">
