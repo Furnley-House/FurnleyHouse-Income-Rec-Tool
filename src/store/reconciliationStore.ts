@@ -34,6 +34,7 @@ interface ReconciliationStore {
   confirmPendingMatches: (notes: string) => void;
   autoMatchCurrentPayment: () => void;
   markLineItemApprovedUnmatched: (lineItemId: string, notes: string) => void;
+  bulkMarkDataCheckApproved: (lineItemIds: string[], reasonCode: string, notes: string) => void;
   markPaymentFullyReconciled: (notes: string) => void;
   invalidateExpectation: (expectationId: string, reason: string) => void;
   setTolerance: (tolerance: number) => void;
@@ -398,6 +399,57 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     set({
       payments: updatedPayments,
       statistics: calculateStatistics(updatedPayments, expectations, matches)
+    });
+  },
+
+  bulkMarkDataCheckApproved: (lineItemIds: string[], reasonCode: string, notes: string) => {
+    const { selectedPaymentId, payments, expectations, matches } = get();
+    if (!selectedPaymentId) return;
+    
+    const lineItemIdSet = new Set(lineItemIds);
+    
+    const updatedPayments = payments.map(p => {
+      if (p.id === selectedPaymentId) {
+        const updatedLineItems = p.lineItems.map(li => {
+          if (lineItemIdSet.has(li.id)) {
+            return {
+              ...li,
+              status: 'approved_unmatched' as const,
+              matchNotes: notes,
+              reasonCode
+            };
+          }
+          return li;
+        });
+        
+        return {
+          ...p,
+          lineItems: updatedLineItems
+        };
+      }
+      return p;
+    });
+    
+    set({
+      payments: updatedPayments,
+      statistics: calculateStatistics(updatedPayments, expectations, matches)
+    });
+
+    // Persist to cache
+    import('@/hooks/useCacheSync').then(({ syncLineItemStatusToCache }) => {
+      lineItemIds.forEach(id => {
+        syncLineItemStatusToCache(id, 'approved_unmatched', undefined, notes);
+        // Also update reason_code in cache
+        import('@/integrations/supabase/client').then(({ supabase }) => {
+          supabase
+            .from('cached_line_items')
+            .update({ reason_code: reasonCode, status: 'approved_unmatched', match_notes: notes })
+            .eq('id', id)
+            .then(({ error }) => {
+              if (error) console.warn('[DataCheck] Failed to update reason_code for', id, error.message);
+            });
+        });
+      });
     });
   },
   

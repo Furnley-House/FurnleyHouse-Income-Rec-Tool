@@ -77,6 +77,7 @@ export type Database = {
           matched_expectation_id: string | null
           payment_id: string
           plan_reference: string | null
+          reason_code: string | null
           status: string
           updated_at: string
           zoho_record_id: string | null
@@ -92,6 +93,7 @@ export type Database = {
           matched_expectation_id?: string | null
           payment_id: string
           plan_reference?: string | null
+          reason_code?: string | null
           status?: string
           updated_at?: string
           zoho_record_id?: string | null
@@ -107,6 +109,7 @@ export type Database = {
           matched_expectation_id?: string | null
           payment_id?: string
           plan_reference?: string | null
+          reason_code?: string | null
           status?: string
           updated_at?: string
           zoho_record_id?: string | null

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { PaymentSummary } from './PaymentSummary';
 import { ExpectationGrid } from './ExpectationGrid';
@@ -6,107 +6,101 @@ import { MatchConfirmation } from './MatchConfirmation';
 import { EmptyWorkspace } from './EmptyWorkspace';
 import { StatementItemList } from './StatementItemList';
 import { PrescreeningMode } from './PrescreeningMode';
-import { ArrowLeftRight, Zap, List } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { DataCheckMode } from './DataCheckMode';
+import { WorkflowPhases, type WorkflowPhase } from './WorkflowPhases';
+import { ArrowLeftRight } from 'lucide-react';
 
 // Threshold for suggesting prescreening mode
 const LARGE_PAYMENT_THRESHOLD = 50;
 
 export function ReconciliationWorkspace() {
   const { selectedPaymentId, pendingMatches, getSelectedPayment } = useReconciliationStore();
-  const [viewMode, setViewMode] = useState<'auto' | 'standard' | 'prescreening'>('auto');
-  const [userOverrode, setUserOverrode] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState<WorkflowPhase>('auto-match');
+  const [completedPhases, setCompletedPhases] = useState<Set<WorkflowPhase>>(new Set());
   
   const payment = getSelectedPayment();
   
-  // Reset mode when payment changes
+  // Reset phase when payment changes
   useEffect(() => {
-    setViewMode('auto');
-    setUserOverrode(false);
+    const itemCount = payment?.lineItems.length || 0;
+    const isLarge = itemCount >= LARGE_PAYMENT_THRESHOLD;
+    setCurrentPhase(isLarge ? 'auto-match' : 'manual-match');
+    setCompletedPhases(new Set());
   }, [selectedPaymentId]);
+  
+  // Count data check issues for badge
+  const dataCheckCount = useMemo(() => {
+    if (!payment) return 0;
+    const { expectations } = useReconciliationStore.getState();
+    const allPlanRefs = new Set<string>();
+    expectations.forEach(e => {
+      if (e.planReference?.trim()) allPlanRefs.add(e.planReference);
+    });
+    const unmatched = payment.lineItems.filter(li => li.status === 'unmatched');
+    // Count items with plan refs not found in any expectation
+    const noPlans = unmatched.filter(li => li.planReference?.trim() && !allPlanRefs.has(li.planReference));
+    return noPlans.length;
+  }, [payment?.lineItems]);
   
   if (!selectedPaymentId) {
     return <EmptyWorkspace />;
   }
   
+  const handlePhaseChange = (phase: WorkflowPhase) => {
+    setCurrentPhase(phase);
+  };
+  
+  const handleAutoMatchComplete = () => {
+    setCompletedPhases(prev => new Set([...prev, 'auto-match']));
+    setCurrentPhase('data-checks');
+  };
+  
+  const handleDataCheckComplete = () => {
+    setCompletedPhases(prev => new Set([...prev, 'data-checks']));
+    setCurrentPhase('manual-match');
+  };
+  
   const itemCount = payment?.lineItems.length || 0;
   const isLargePayment = itemCount >= LARGE_PAYMENT_THRESHOLD;
   
-  // Determine effective view mode
-  const effectiveMode = viewMode === 'auto' 
-    ? (isLargePayment ? 'prescreening' : 'standard')
-    : viewMode;
-  
-  const handleSwitchToStandard = () => {
-    setViewMode('standard');
-    setUserOverrode(true);
-  };
-  
-  const handleSwitchToPrescreening = () => {
-    setViewMode('prescreening');
-    setUserOverrode(true);
-  };
-  
-  // Prescreening mode for large payments
-  if (effectiveMode === 'prescreening') {
-    return (
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <PaymentSummary />
-        <PrescreeningMode onSwitchToStandard={handleSwitchToStandard} />
-        {pendingMatches.length > 0 && <MatchConfirmation />}
-      </div>
-    );
-  }
-  
-  // Standard two-panel mode
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Payment Summary - Compact Header */}
       <PaymentSummary />
       
-      {/* Mode indicator for large payments in standard view */}
-      {isLargePayment && userOverrode && (
-        <div className="px-4 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <List className="h-4 w-4" />
-            <span>Standard view ({itemCount} items)</span>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSwitchToPrescreening}
-            className="gap-2"
-          >
-            <Zap className="h-4 w-4" />
-            Switch to Prescreening
-          </Button>
-        </div>
-      )}
+      {/* Workflow Phases Bar */}
+      <WorkflowPhases
+        currentPhase={currentPhase}
+        onPhaseChange={handlePhaseChange}
+        completedPhases={completedPhases}
+        dataCheckCount={dataCheckCount}
+      />
       
-      {/* Two-Panel Reconciliation View */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Left: Statement Items from Provider */}
-        <div className="w-1/2 overflow-hidden border-r border-border">
-          <StatementItemList />
-        </div>
-        
-        {/* Center Arrow Indicator */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-          <div className="h-10 w-10 rounded-full bg-background border-2 border-border shadow-lg flex items-center justify-center">
-            <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
+      {/* Phase Content */}
+      {currentPhase === 'auto-match' && isLargePayment ? (
+        <>
+          <PrescreeningMode onSwitchToStandard={handleAutoMatchComplete} />
+          {pendingMatches.length > 0 && <MatchConfirmation />}
+        </>
+      ) : currentPhase === 'data-checks' ? (
+        <DataCheckMode onComplete={handleDataCheckComplete} />
+      ) : (
+        <>
+          {/* Standard two-panel mode */}
+          <div className="flex-1 flex overflow-hidden relative">
+            <div className="w-1/2 overflow-hidden border-r border-border">
+              <StatementItemList />
+            </div>
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
+              <div className="h-10 w-10 rounded-full bg-background border-2 border-border shadow-lg flex items-center justify-center">
+                <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="w-1/2 overflow-hidden">
+              <ExpectationGrid />
+            </div>
           </div>
-        </div>
-        
-        {/* Right: Expectations to Match */}
-        <div className="w-1/2 overflow-hidden">
-          <ExpectationGrid />
-        </div>
-      </div>
-      
-      {/* Match Confirmation Bar */}
-      {pendingMatches.length > 0 && (
-        <MatchConfirmation />
+          {pendingMatches.length > 0 && <MatchConfirmation />}
+        </>
       )}
     </div>
   );

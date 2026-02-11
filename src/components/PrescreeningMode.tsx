@@ -362,8 +362,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={onSwitchToStandard}>
-            <SkipForward className="h-4 w-4 mr-2" />
-            Switch to Standard View
+            Continue to Next Step →
           </Button>
         </div>
       </div>
