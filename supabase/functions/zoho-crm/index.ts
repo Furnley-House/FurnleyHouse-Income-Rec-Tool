@@ -1175,55 +1175,75 @@ serve(async (req) => {
 
         console.log(`[Zoho] Found ${foundPlans.size} plans out of ${uniqueRefs.length} policy references`);
 
-        // Step 2: For found plans, check if they have Fees records
+        // Step 2: For found plans, check if they have Fees records and ongoing fee percentages
         const planIds = [...foundPlans.values()];
         const plansWithFees = new Set<string>(); // planIds that have fees
+        const plansWithOngoingFeeZeroPercent = new Set<string>(); // planIds with ongoing fee at 0%
 
         if (planIds.length > 0) {
           // Query Fees module - look for records linked to these plan IDs
-          // Fees are likely linked to Plans via a lookup field
-          for (let i = 0; i < planIds.length; i += batchSize) {
-            const batch = planIds.slice(i, i + batchSize);
-            const inClause = batch.map((id: string) => `'${id}'`).join(", ");
-            
-            // Try common field names for the plan lookup in Fees
-            const feeModuleFields = await getModuleFields(accessToken, "Fees");
-            const planLookupField = resolveFieldApiName(feeModuleFields, [
-              "Plan", "Plan_Name", "Plans", "Related_Plan", "Plan_ID"
+          const feeModuleFields = await getModuleFields(accessToken, "Fees");
+          const planLookupField = resolveFieldApiName(feeModuleFields, [
+            "Plan", "Plan_Name", "Plans", "Related_Plan", "Plan_ID"
+          ]);
+
+          if (!planLookupField) {
+            console.warn("[Zoho] Could not resolve plan lookup field in Fees module");
+          } else {
+            // Resolve fee percentage and fee type/category fields
+            const feePercentField = resolveFieldApiName(feeModuleFields, [
+              "Fee_Percentage", "Percentage", "Fee_Percent", "Ongoing_Fee_Percentage", "Fee_%"
+            ]);
+            const feeCategoryField = resolveFieldApiName(feeModuleFields, [
+              "Fee_Category", "Category", "Fee_Type", "Type"
             ]);
 
-            if (!planLookupField) {
-              console.warn("[Zoho] Could not resolve plan lookup field in Fees module");
-              break;
-            }
+            const selectFeeFields = ["id", planLookupField];
+            if (feePercentField) selectFeeFields.push(feePercentField);
+            if (feeCategoryField) selectFeeFields.push(feeCategoryField);
 
-            const query = `select id, ${planLookupField} from Fees where ${planLookupField} in (${inClause})`;
-            
-            try {
-              const fees = await queryWithCOQL(accessToken, query);
-              for (const fee of fees) {
-                const planRef = fee[planLookupField];
-                const planId = typeof planRef === "object" && planRef !== null 
-                  ? String((planRef as any).id || planRef)
-                  : String(planRef || "");
-                if (planId) {
-                  plansWithFees.add(planId);
+            for (let i = 0; i < planIds.length; i += batchSize) {
+              const batch = planIds.slice(i, i + batchSize);
+              const inClause = batch.map((id: string) => `'${id}'`).join(", ");
+
+              const query = `select ${selectFeeFields.join(", ")} from Fees where ${planLookupField} in (${inClause})`;
+              
+              try {
+                const fees = await queryWithCOQL(accessToken, query);
+                for (const fee of fees) {
+                  const planRef = fee[planLookupField];
+                  const planId = typeof planRef === "object" && planRef !== null 
+                    ? String((planRef as any).id || planRef)
+                    : String(planRef || "");
+                  if (planId) {
+                    plansWithFees.add(planId);
+
+                    // Check for ongoing fee with zero percentage
+                    if (feePercentField && feeCategoryField) {
+                      const category = String(fee[feeCategoryField] || "").toLowerCase();
+                      const isOngoing = category.includes("ongoing") || category.includes("recurring") || category.includes("trail");
+                      const pct = parseFloat(String(fee[feePercentField] || "0"));
+                      if (isOngoing && (isNaN(pct) || pct === 0)) {
+                        plansWithOngoingFeeZeroPercent.add(planId);
+                      }
+                    }
+                  }
                 }
+              } catch (err: any) {
+                console.warn(`[Zoho] Fees query batch failed:`, err.message);
               }
-            } catch (err: any) {
-              console.warn(`[Zoho] Fees query batch failed:`, err.message);
-            }
 
-            if (i + batchSize < planIds.length) {
-              await sleep(500);
+              if (i + batchSize < planIds.length) {
+                await sleep(500);
+              }
             }
           }
         }
 
-        console.log(`[Zoho] ${plansWithFees.size} plans have fee records out of ${planIds.length} found plans`);
+        console.log(`[Zoho] ${plansWithFees.size} plans have fee records, ${plansWithOngoingFeeZeroPercent.size} have ongoing fee at 0%`);
 
         // Build results per policy reference
-        const checkResults: Record<string, { planFound: boolean; hasFees: boolean; zeroValuation: boolean; planId?: string }> = {};
+        const checkResults: Record<string, { planFound: boolean; hasFees: boolean; zeroValuation: boolean; ongoingFeeZeroPercent: boolean; planId?: string }> = {};
         for (const ref of uniqueRefs) {
           const planId = foundPlans.get(ref);
           const valuation = planValuations.get(ref);
@@ -1231,6 +1251,7 @@ serve(async (req) => {
             planFound: !!planId,
             hasFees: planId ? plansWithFees.has(planId) : false,
             zeroValuation: planId ? (valuation !== undefined && valuation === 0) : false,
+            ongoingFeeZeroPercent: planId ? plansWithOngoingFeeZeroPercent.has(planId) : false,
             planId: planId || undefined,
           };
         }
