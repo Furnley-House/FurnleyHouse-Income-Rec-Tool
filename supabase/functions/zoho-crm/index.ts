@@ -799,21 +799,31 @@ serve(async (req) => {
 
         const now = formatZohoDateTime(new Date());
         const batchData = {
-          data: records.map((r: any, idx: number) => ({
-            Name: `Match-${Date.now()}-${idx}`,
-            Bank_Payment_Ref_Match: { id: r.paymentId },
-            Payment_Line_Match: { id: r.lineItemId },
-            Expectation: { id: r.expectationId },
-            Matched_Amount: r.matchedAmount,
-            Variance: r.variance || 0,
-            Variance_Percentage: r.variancePercentage || 0,
-            Match_Type: r.matchType || "full",
-            Match_Method: r.matchMethod || "manual",
-            Match_Quality: r.matchQuality || "good",
-            Notes: r.notes || "",
-            Matched_At: now,
-            Confirmed: true,
-          })),
+          data: records.map((r: any, idx: number) => {
+            const record: Record<string, unknown> = {
+              Name: `Match-${Date.now()}-${idx}`,
+              Bank_Payment_Ref_Match: { id: r.paymentId },
+              Payment_Line_Match: { id: r.lineItemId },
+              Matched_Amount: r.matchedAmount,
+              Variance: r.variance || 0,
+              Variance_Percentage: r.variancePercentage || 0,
+              Match_Type: r.matchType || "full",
+              Match_Method: r.matchMethod || "manual",
+              Match_Quality: r.matchQuality || "good",
+              Notes: r.notes || "",
+              Matched_At: now,
+              Confirmed: true,
+            };
+            // Only include Expectation if provided (data-check matches have none)
+            if (r.expectationId) {
+              record.Expectation = { id: r.expectationId };
+            }
+            // Include Reason_Code if provided (for data-check approved items)
+            if (r.reasonCode) {
+              record.Reason_Code = r.reasonCode;
+            }
+            return record;
+          }),
           trigger: [] // Skip workflow triggers for batch performance
         };
 
