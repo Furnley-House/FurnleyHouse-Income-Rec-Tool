@@ -9,9 +9,19 @@ import { FileUploadStep } from './steps/FileUploadStep';
 import { MappingAnalysisStep } from './steps/MappingAnalysisStep';
 import { MappingReviewStep } from './steps/MappingReviewStep';
 import { ValidationStep } from './steps/ValidationStep';
+import { ImportResultStep } from './steps/ImportResultStep';
 import { WizardState, PaymentHeaderInputs, FileUploadInputs, AIMappingResult, FieldMapping, FieldMappingConfig, DefaultFieldValue } from '../types';
 
-type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation';
+type WizardStep = 'payment' | 'upload' | 'analyzing' | 'review' | 'validation' | 'result';
+
+interface ImportResult {
+  success: boolean;
+  successCount: number;
+  failedCount: number;
+  totalRequested: number;
+  paymentReference: string;
+  error?: string;
+}
 
 const STEP_LABELS: Record<WizardStep, string> = {
   payment: 'Payment',
@@ -19,9 +29,11 @@ const STEP_LABELS: Record<WizardStep, string> = {
   analyzing: 'Analyzing',
   review: 'Review',
   validation: 'Confirm',
+  result: 'Done',
 };
 
 const STEP_ORDER: WizardStep[] = ['payment', 'upload', 'analyzing', 'review', 'validation'];
+const VISIBLE_STEPS: WizardStep[] = ['payment', 'upload', 'analyzing', 'review', 'validation'];
 
 export function CSVMapperPage() {
   const navigate = useNavigate();
@@ -37,6 +49,7 @@ export function CSVMapperPage() {
     rowOffset: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const handleBack = () => {
     if (currentStep === 'payment') {
@@ -122,7 +135,6 @@ export function CSVMapperPage() {
       const { paymentHeader, fileInputs } = wizardState;
       const rows = fileInputs.csvData.rows.slice(wizardState.rowOffset);
 
-      // Build line items from CSV rows using mappings
       const lineItems = rows.map(row => ({
         Client_Name: resolveFieldValue(row, 'client_name'),
         Plan_Reference: resolveFieldValue(row, 'policy_reference'),
@@ -133,7 +145,6 @@ export function CSVMapperPage() {
         Adviser_Name: resolveFieldValue(row, 'adviser_name') || '',
       }));
 
-      // Call edge function with the same rate-limit aware patterns
       const res = await supabase.functions.invoke('zoho-crm', {
         body: {
           action: 'createPaymentWithLineItems',
@@ -153,11 +164,10 @@ export function CSVMapperPage() {
 
       if (res.error) throw new Error(res.error.message);
 
-      // Handle rate limit response
       if (res.data?.code === 'ZOHO_RATE_LIMIT') {
         const retrySeconds = res.data.retryAfterSeconds || 60;
         toast.error('Rate Limited', {
-          description: `Zoho API rate limited. Please wait ${retrySeconds}s and try again. ${res.data.error}`,
+          description: `Zoho API rate limited. Please wait ${retrySeconds}s and try again.`,
           duration: 10000,
         });
         return;
@@ -168,24 +178,24 @@ export function CSVMapperPage() {
       }
 
       const result = res.data.data;
-      const failedCount = result.failedCount || 0;
-
-      if (failedCount > 0) {
-        toast.warning('Import partially complete', {
-          description: `Payment created. ${result.successCount}/${result.totalRequested} line items imported. ${failedCount} failed.`,
-          duration: 8000,
-        });
-      } else {
-        toast.success('Import completed successfully!', {
-          description: `Payment "${paymentHeader.paymentReference}" created with ${result.successCount} line items.`,
-        });
-      }
-
-      navigate('/');
-    } catch (error) {
-      toast.error('Import failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+      setImportResult({
+        success: true,
+        successCount: result.successCount || 0,
+        failedCount: result.failedCount || 0,
+        totalRequested: result.totalRequested || lineItems.length,
+        paymentReference: paymentHeader.paymentReference,
       });
+      setCurrentStep('result');
+    } catch (error) {
+      setImportResult({
+        success: false,
+        successCount: 0,
+        failedCount: 0,
+        totalRequested: 0,
+        paymentReference: wizardState.paymentHeader?.paymentReference || '',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      setCurrentStep('result');
     } finally {
       setIsSubmitting(false);
     }
@@ -212,8 +222,9 @@ export function CSVMapperPage() {
             </div>
             
             {/* Step Indicator */}
+            {currentStep !== 'result' && (
             <div className="hidden md:flex items-center gap-1">
-              {STEP_ORDER.map((step, index) => (
+              {VISIBLE_STEPS.map((step, index) => (
                 <div key={step} className="flex items-center">
                   <div className="flex items-center gap-2">
                     <div 
@@ -235,7 +246,7 @@ export function CSVMapperPage() {
                       {STEP_LABELS[step]}
                     </span>
                   </div>
-                  {index < STEP_ORDER.length - 1 && (
+                  {index < VISIBLE_STEPS.length - 1 && (
                     <div className={`w-8 lg:w-12 h-0.5 mx-2 ${
                       index < currentStepIndex
                         ? 'bg-primary/40'
@@ -245,6 +256,7 @@ export function CSVMapperPage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
       </header>
@@ -295,6 +307,13 @@ export function CSVMapperPage() {
             onBack={handleBack}
             onConfirm={handleConfirmImport}
             isSubmitting={isSubmitting}
+          />
+        )}
+
+        {currentStep === 'result' && importResult && (
+          <ImportResultStep
+            result={importResult}
+            onDone={() => navigate('/')}
           />
         )}
       </main>
