@@ -939,7 +939,14 @@ serve(async (req) => {
           id: item?.details?.id || null,
           code: item?.code || null,
           message: item?.message || null,
+          details: item?.details || null,
         }));
+
+        // Log first few errors with details for debugging
+        const firstErrors = updateResults.filter((r: any) => r.status !== "success").slice(0, 3);
+        if (firstErrors.length > 0) {
+          console.log(`[Zoho] First ${firstErrors.length} update errors:`, JSON.stringify(firstErrors, null, 2));
+        }
 
         const updateSuccessCount = updateResults.filter((r: any) => r.status === "success").length;
         const updateFailedCount = updateResults.length - updateSuccessCount;
