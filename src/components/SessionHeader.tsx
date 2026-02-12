@@ -176,23 +176,37 @@ export function SessionHeader() {
     const allSyncedIds: string[] = [];
     
     // Build batch records - pending matches already store Zoho IDs directly
+    const DATA_CHECK_PLACEHOLDER = 'DATA_CHECK_NO_EXPECTATION';
+    
     const batchItems = pending.map(match => {
       // The IDs in pending_matches ARE the Zoho record IDs (stored during cache download)
-      const hasAllIds = match.paymentId && match.lineItemId && match.expectationId;
+      const isDataCheck = match.expectationId === DATA_CHECK_PLACEHOLDER;
+      const hasAllIds = match.paymentId && match.lineItemId && (match.expectationId || isDataCheck);
+      
+      // Extract reason code from notes for data-check items (format: "ReasonCode: ...")
+      let reasonCode: string | undefined;
+      if (isDataCheck && match.notes) {
+        const reasonMatch = match.notes.match(/^([^:]+):/);
+        if (reasonMatch) {
+          reasonCode = reasonMatch[1].trim();
+        }
+      }
       
       return {
         match,
         resolved: hasAllIds ? {
           paymentZohoId: match.paymentId,
           lineItemZohoId: match.lineItemId,
-          expectationZohoId: match.expectationId,
+          // Don't send the placeholder as an expectation ID - send undefined so Zoho skips the lookup
+          expectationZohoId: isDataCheck ? undefined : match.expectationId,
           matchedAmount: match.matchedAmount,
           variance: match.variance,
           variancePercentage: match.variancePercentage,
-          matchType: 'full',
-          matchMethod: 'manual',
+          matchType: isDataCheck ? 'full' : 'full',
+          matchMethod: isDataCheck ? 'manual' : 'manual',
           matchQuality: match.matchQuality || 'good',
           notes: match.notes || '',
+          reasonCode,
         } : null,
       };
     });
