@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
-import { useZohoSync } from '@/hooks/useZohoSync';
+import { useCachedData } from '@/hooks/useCachedData';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -39,7 +40,7 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
     expectations: allExpectationsFromStore
   } = useReconciliationStore();
   
-  const { syncMatches, syncPaymentStatus } = useZohoSync();
+  const { savePendingMatch, updateLineItemStatus, updateExpectationStatus, updatePaymentStatus } = useCachedData();
   
   const payment = getSelectedPayment();
   const expectations = getRelevantExpectations();
@@ -273,11 +274,8 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       const notes = `Prescreening batch - matched at tolerance levels: ${passResults.map(p => `${p.tolerance}%`).join(', ')}`;
       confirmPendingMatches(notes);
       
-      // Sync matches to Zoho
-      const matchSyncData = pendingMatches.map(pm => {
-        const lineItem = payment.lineItems.find(li => li.id === pm.lineItemId);
-        const expectation = allExpectationsFromStore.find(e => e.id === pm.expectationId);
-        
+      // Save each match to pending_matches table (will be synced to Zoho via Sync button)
+      for (const pm of pendingMatches) {
         // Determine match quality based on variance
         let matchQuality: 'perfect' | 'good' | 'acceptable' | 'warning' = 'warning';
         const absVariance = Math.abs(pm.variancePercentage);
@@ -285,24 +283,23 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
         else if (absVariance <= 2) matchQuality = 'good';
         else if (absVariance <= tolerance) matchQuality = 'acceptable';
         
-        return {
+        await savePendingMatch({
           paymentId: payment.id,
-          paymentZohoId: payment.zohoId || payment.id,
           lineItemId: pm.lineItemId,
-          lineItemZohoId: lineItem?.zohoId || pm.lineItemId,
           expectationId: pm.expectationId,
-          expectationZohoId: expectation?.zohoId || pm.expectationId,
           matchedAmount: pm.lineItemAmount,
           variance: pm.variance,
           variancePercentage: pm.variancePercentage,
-          matchType: 'full' as const,
-          matchMethod: 'auto' as const, // Prescreening is auto-matching
           matchQuality,
           notes,
-        };
-      });
-      
-      await syncMatches(matchSyncData);
+        });
+        
+        // Update cached line item status
+        await updateLineItemStatus(pm.lineItemId, 'matched', pm.expectationId, notes);
+        
+        // Update cached expectation status
+        await updateExpectationStatus(pm.expectationId, 'matched', pm.lineItemAmount);
+      }
       
       // Calculate new payment status
       const totalMatchedAmount = pendingMatches.reduce((sum, pm) => sum + pm.lineItemAmount, 0);
@@ -313,14 +310,9 @@ export function PrescreeningMode({ onSwitchToStandard }: { onSwitchToStandard: (
       );
       const newStatus = allMatched ? 'reconciled' : 'in_progress';
       
-      await syncPaymentStatus(
-        payment.zohoId || payment.id,
-        newStatus,
-        newReconciledAmount,
-        newRemainingAmount,
-        notes
-      );
+      await updatePaymentStatus(payment.id, newStatus, newReconciledAmount, newRemainingAmount);
       
+      toast.success(`Saved ${pendingMatches.length} match(es) locally. Click "Sync" to push to Zoho.`);
       setPassResults([]);
     } finally {
       setIsSyncing(false);
