@@ -159,7 +159,7 @@ export function SessionHeader() {
     }
   };
   
-  // Sync pending matches to Zoho using batch API (up to 100 per call)
+  // Sync pending matches to Zoho using batch API, then auto-refresh data
   const handleSyncToZoho = async () => {
     const pending = await getPendingMatches();
     if (!pending || pending.length === 0) {
@@ -169,21 +169,20 @@ export function SessionHeader() {
     
     setIsSyncing(true);
     setSyncProgress({ done: 0, total: pending.length });
-    toast.info(`Syncing ${pending.length} matches to Zoho in batches of 100...`);
+    toast.info(`Phase 1: Creating ${pending.length} match records in Zoho...`);
     
     let totalSuccess = 0;
     let totalFailed = 0;
     const allSyncedIds: string[] = [];
+    let wasRateLimited = false;
     
     // Build batch records - pending matches already store Zoho IDs directly
     const DATA_CHECK_PLACEHOLDER = 'DATA_CHECK_NO_EXPECTATION';
     
     const batchItems = pending.map(match => {
-      // The IDs in pending_matches ARE the Zoho record IDs (stored during cache download)
       const isDataCheck = match.expectationId === DATA_CHECK_PLACEHOLDER;
       const hasAllIds = match.paymentId && match.lineItemId && (match.expectationId || isDataCheck);
       
-      // Extract reason code from notes for data-check items (format: "ReasonCode: ...")
       let reasonCode: string | undefined;
       if (isDataCheck && match.notes) {
         const reasonMatch = match.notes.match(/^([^:]+):/);
@@ -197,7 +196,6 @@ export function SessionHeader() {
         resolved: hasAllIds ? {
           paymentZohoId: match.paymentId,
           lineItemZohoId: match.lineItemId,
-          // Don't send the placeholder as an expectation ID - send undefined so Zoho skips the lookup
           expectationZohoId: isDataCheck ? undefined : match.expectationId,
           matchedAmount: match.matchedAmount,
           variance: match.variance,
@@ -211,7 +209,6 @@ export function SessionHeader() {
       };
     });
     
-    // Count unresolved
     const unresolved = batchItems.filter(b => !b.resolved);
     if (unresolved.length > 0) {
       console.warn(`[Sync] ${unresolved.length} matches have missing data, skipping`);
@@ -219,8 +216,9 @@ export function SessionHeader() {
     }
     
     const resolved = batchItems.filter(b => b.resolved);
+    console.log(`[Sync] Phase 1: ${resolved.length} resolved matches to sync, ${unresolved.length} unresolved`);
     
-    // Process in chunks of 100
+    // Phase 1: Create match records
     const BATCH_SIZE = 100;
     for (let i = 0; i < resolved.length; i += BATCH_SIZE) {
       const chunk = resolved.slice(i, i + BATCH_SIZE);
@@ -228,13 +226,16 @@ export function SessionHeader() {
       try {
         const result = await syncMatchBatch(chunk.map(c => c.resolved!));
         
+        console.log(`[Sync] Phase 1 batch result: ${result.successCount} success, ${result.failedCount} failed, results count: ${result.results.length}`);
+        
         totalSuccess += result.successCount;
         totalFailed += result.failedCount;
         
-        // Mark successful matches for DB update
         result.results.forEach((r, idx) => {
           if (r.status === 'success') {
             allSyncedIds.push(chunk[idx].match.id);
+          } else {
+            console.warn(`[Sync] Phase 1 record ${idx} failed:`, r);
           }
         });
         
@@ -247,18 +248,19 @@ export function SessionHeader() {
           toast.error(`Zoho rate limited after ${totalSuccess} synced. Retry in ${retrySeconds}s.`, {
             description: `${pending.length - totalSuccess - totalFailed} matches remaining`,
           });
+          wasRateLimited = true;
           break;
         }
-        // Whole batch failed
         totalFailed += chunk.length;
-        console.error('[Sync] Batch failed:', err);
+        console.error('[Sync] Phase 1 batch failed:', err);
       }
       
-      // Small delay between batches (2s is plenty when doing 100 per call)
       if (i + BATCH_SIZE < resolved.length) {
         await new Promise(r => setTimeout(r, 2000));
       }
     }
+    
+    console.log(`[Sync] Phase 1 complete: ${totalSuccess} success, ${totalFailed} failed, ${allSyncedIds.length} synced IDs`);
     
     // Mark synced matches in DB
     if (allSyncedIds.length > 0) {
@@ -266,45 +268,45 @@ export function SessionHeader() {
       await updateLastSync();
       await refreshSyncStatus();
       
-      // Post-sync: update Bank_Payment_Lines and Expectations statuses in Zoho
-      // Collect the synced matches to build update payloads
+      // Phase 2: Update Bank_Payment_Lines statuses in Zoho
       const syncedMatches = resolved
         .filter(b => allSyncedIds.includes(b.match.id))
         .map(b => b.resolved!);
       
-      if (syncedMatches.length > 0) {
-        toast.info('Updating line item and expectation statuses in Zoho...');
+      console.log(`[Sync] Phase 2: Updating ${syncedMatches.length} line items and expectations in Zoho`);
+      
+      if (syncedMatches.length > 0 && !wasRateLimited) {
+        toast.info(`Phase 2: Updating ${syncedMatches.length} line items in Zoho...`);
         
         try {
-          // Update Bank_Payment_Lines: set status to 'matched' and link expectation
-          // Matched_Expectation is a mandatory multi-select lookup field requiring
-          // jsonarray format: [{id: "zohoId"}]
+          // Build line item updates with Matched_Expectation in jsonarray format
           const lineItemUpdates = syncedMatches.map(m => {
             const update: { id: string; [key: string]: unknown } = {
               id: m.lineItemZohoId,
               Status: 'matched',
             };
-            // Include Matched_Expectation as jsonarray (Zoho multi-select lookup format)
             if (m.expectationZohoId) {
               update.Matched_Expectation = [{ id: m.expectationZohoId }];
             }
             return update;
           });
           
+          console.log(`[Sync] Phase 2: Sending ${lineItemUpdates.length} line item updates`);
+          console.log(`[Sync] Phase 2: Sample update:`, JSON.stringify(lineItemUpdates[0]));
+          
           let lineResult = { successCount: 0, failedCount: 0 };
           if (lineItemUpdates.length > 0) {
             lineResult = await updateRecordsBatch('Bank_Payment_Lines', lineItemUpdates);
-            console.log(`[Sync] Line items updated: ${lineResult.successCount} success, ${lineResult.failedCount} failed`);
+            console.log(`[Sync] Phase 2 result: ${lineResult.successCount} success, ${lineResult.failedCount} failed`);
           }
           
-          // Small delay between module updates
           await new Promise(r => setTimeout(r, 2000));
           
-          // Update Expectations: set status to 'matched' and allocated amount
-          // De-duplicate by expectation ID (multiple line items may match same expectation)
+          // Phase 3: Update Expectations
+          toast.info('Phase 3: Updating expectations in Zoho...');
           const expectationMap = new Map<string, { id: string; allocatedAmount: number }>();
           for (const m of syncedMatches) {
-            if (!m.expectationZohoId) continue; // Skip data-check items
+            if (!m.expectationZohoId) continue;
             const existing = expectationMap.get(m.expectationZohoId);
             expectationMap.set(m.expectationZohoId, {
               id: m.expectationZohoId,
@@ -319,23 +321,26 @@ export function SessionHeader() {
             Remaining_Amount: 0,
           }));
           
+          console.log(`[Sync] Phase 3: Sending ${expectationUpdates.length} expectation updates`);
+          
           let expResult = { successCount: 0, failedCount: 0 };
           if (expectationUpdates.length > 0) {
             expResult = await updateRecordsBatch('Expectations', expectationUpdates);
-            console.log(`[Sync] Expectations updated: ${expResult.successCount} success, ${expResult.failedCount} failed`);
+            console.log(`[Sync] Phase 3 result: ${expResult.successCount} success, ${expResult.failedCount} failed`);
           }
           
           if (lineResult.failedCount > 0 || expResult.failedCount > 0) {
-            toast.warning(`Status updates: ${lineResult.failedCount} line items and ${expResult.failedCount} expectations failed to update`);
+            toast.warning(`Status updates: ${lineResult.failedCount} line items and ${expResult.failedCount} expectations failed to update in Zoho`);
           } else {
-            toast.success('Line items and expectations updated in Zoho');
+            toast.success(`All ${lineResult.successCount} line items and ${expResult.successCount} expectations updated in Zoho`);
           }
         } catch (statusErr: any) {
           if (statusErr?.isRateLimit) {
             toast.warning('Rate limited while updating statuses — matches were created but statuses need manual update');
+            wasRateLimited = true;
           } else {
-            console.error('[Sync] Status update error:', statusErr);
-            toast.warning('Match records created but status updates failed — you may need to update statuses manually');
+            console.error('[Sync] Phase 2/3 error:', statusErr);
+            toast.warning('Match records created but status updates failed — check console for details');
           }
         }
       }
@@ -345,14 +350,33 @@ export function SessionHeader() {
     const remainingPending = await getPendingMatches();
     setPendingCount(remainingPending?.length || 0);
     
-    setIsSyncing(false);
-    setSyncProgress(null);
-    
     if (totalFailed === 0) {
       toast.success(`Synced ${totalSuccess} matches to Zoho`);
     } else {
       toast.warning(`Synced ${totalSuccess} matches, ${totalFailed} failed`);
     }
+    
+    // Phase 4: Auto-refresh data from Zoho (unless rate limited)
+    if (!wasRateLimited && allSyncedIds.length > 0) {
+      toast.info('Refreshing data from Zoho...');
+      
+      const result = await loadZohoData({ unmatchedOnly: true });
+      
+      if (result.rateLimitInfo?.isRateLimited) {
+        setCountdown(result.rateLimitInfo.retryAfterSeconds);
+        toast.warning('Data refresh rate-limited — your matches were synced, reload cache when ready');
+      } else if (result.data) {
+        const saved = await saveToCache(result.data.payments, result.data.expectations);
+        if (saved) {
+          await updateLastDownload();
+          setZohoData(result.data.payments, result.data.expectations);
+          toast.success(`Refreshed: ${result.data.payments.length} payments, ${result.data.expectations.length} expectations`);
+        }
+      }
+    }
+    
+    setIsSyncing(false);
+    setSyncProgress(null);
   };
   
   const isLoading = isLoadingData || isZohoLoading || isCacheLoading;
@@ -458,14 +482,14 @@ export function SessionHeader() {
             {countdown ? `Retry in ${countdown}s` : 'Download'}
           </Button>
           
-          {/* Sync to Zoho */}
+          {/* Sync to Zoho + Auto-Refresh */}
           <Button
             variant={hasPendingMatches ? "default" : "outline"}
             size="sm"
             onClick={handleSyncToZoho}
             disabled={isSyncing || !hasPendingMatches}
             className="gap-2"
-            title="Sync matches to Zoho"
+            title="Sync matches to Zoho and refresh data"
           >
             {isSyncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -476,7 +500,7 @@ export function SessionHeader() {
             )}
             {isSyncing && syncProgress
               ? `${syncProgress.done}/${syncProgress.total}`
-              : 'Sync'}
+              : 'Sync & Refresh'}
             {!isSyncing && hasPendingMatches && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                 {pendingCount}

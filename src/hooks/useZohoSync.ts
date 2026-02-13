@@ -328,6 +328,7 @@ export function useZohoSync() {
     records: Array<{ id: string; [key: string]: unknown }>
   ): Promise<{ successCount: number; failedCount: number }> => {
     console.log(`[ZohoSync] Batch updating ${records.length} records in ${module}`);
+    console.log(`[ZohoSync] Sample record:`, JSON.stringify(records[0]));
 
     const BATCH_SIZE = 100;
     let totalSuccess = 0;
@@ -335,6 +336,8 @@ export function useZohoSync() {
 
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const chunk = records.slice(i, i + BATCH_SIZE);
+
+      console.log(`[ZohoSync] Sending batch ${Math.floor(i / BATCH_SIZE) + 1} with ${chunk.length} records to ${module}`);
 
       const { data, error } = await supabase.functions.invoke('zoho-crm', {
         body: {
@@ -344,10 +347,12 @@ export function useZohoSync() {
       });
 
       if (error) {
-        console.error(`[ZohoSync] Batch update error for ${module}:`, error);
+        console.error(`[ZohoSync] Edge function error for ${module}:`, error);
         totalFailed += chunk.length;
         continue;
       }
+
+      console.log(`[ZohoSync] Raw response for ${module}:`, JSON.stringify(data));
 
       if (!data?.success) {
         if (data?.code === 'ZOHO_RATE_LIMIT') {
@@ -361,8 +366,18 @@ export function useZohoSync() {
         continue;
       }
 
-      totalSuccess += data.data.successCount;
-      totalFailed += data.data.failedCount;
+      const batchResults = data.data?.batchResults || [];
+      const batchSuccess = data.data?.successCount || 0;
+      const batchFailed = data.data?.failedCount || 0;
+
+      // Log any individual record failures with details
+      const failures = batchResults.filter((r: any) => r.status !== 'success');
+      if (failures.length > 0) {
+        console.error(`[ZohoSync] ${module} per-record failures:`, JSON.stringify(failures.slice(0, 5)));
+      }
+
+      totalSuccess += batchSuccess;
+      totalFailed += batchFailed;
 
       // Delay between batches
       if (i + BATCH_SIZE < records.length) {
