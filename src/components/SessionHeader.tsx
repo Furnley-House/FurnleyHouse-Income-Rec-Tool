@@ -40,6 +40,7 @@ export function SessionHeader() {
     selectedPaymentId,
     autoMatchCurrentPayment,
     isLoadingData,
+    isSavingMatches,
     setZohoData,
     setLoadingState,
     payments,
@@ -481,14 +482,16 @@ export function SessionHeader() {
           
           {/* Sync to Zoho + Auto-Refresh */}
           <Button
-            variant={hasPendingMatches ? "default" : "outline"}
+            variant={hasPendingMatches && !isSavingMatches ? "default" : "outline"}
             size="sm"
             onClick={handleSyncToZoho}
-            disabled={isSyncing || !hasPendingMatches}
+            disabled={isSyncing || isSavingMatches || !hasPendingMatches}
             className="gap-2"
-            title="Sync matches to Zoho and refresh data"
+            title={isSavingMatches ? "Processing matches — please wait" : "Sync matches to Zoho and refresh data"}
           >
             {isSyncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isSavingMatches ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : hasPendingMatches ? (
               <Upload className="h-4 w-4" />
@@ -497,8 +500,10 @@ export function SessionHeader() {
             )}
             {isSyncing && syncProgress
               ? `${syncProgress.done}/${syncProgress.total}`
-              : 'Sync & Refresh'}
-            {!isSyncing && hasPendingMatches && (
+              : isSavingMatches
+                ? 'Saving...'
+                : 'Sync & Refresh'}
+            {!isSyncing && !isSavingMatches && hasPendingMatches && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                 {pendingCount}
               </Badge>

@@ -100,7 +100,9 @@ export function MatchConfirmation() {
   const handleConfirm = async () => {
     if (!payment) return;
     
+    const { setSavingMatches } = useReconciliationStore.getState();
     setIsSaving(true);
+    setSavingMatches(true);
     
     try {
       // First, confirm matches locally in the store
@@ -150,6 +152,8 @@ export function MatchConfirmation() {
       toast.error('Failed to save matches');
     } finally {
       setIsSaving(false);
+      const { setSavingMatches: clearSaving } = useReconciliationStore.getState();
+      clearSaving(false);
     }
     
     setNotes('');
