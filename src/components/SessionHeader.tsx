@@ -279,17 +279,14 @@ export function SessionHeader() {
         toast.info(`Phase 2: Updating ${syncedMatches.length} line items in Zoho...`);
         
         try {
-          // Build line item updates with Matched_Expectation in jsonarray format
-          const lineItemUpdates = syncedMatches.map(m => {
-            const update: { id: string; [key: string]: unknown } = {
-              id: m.lineItemZohoId,
-              Status: 'matched',
-            };
-            if (m.expectationZohoId) {
-              update.Matched_Expectation = [{ id: m.expectationZohoId }];
-            }
-            return update;
-          });
+          // Build line item updates - only set Status to 'matched'
+          // The match linkage is already recorded in Payment_Matches (Phase 1)
+          // Sending Matched_Expectation causes INVALID_DATA errors because
+          // Zoho expects a Payment_Matches ID, not an Expectations ID
+          const lineItemUpdates = syncedMatches.map(m => ({
+            id: m.lineItemZohoId,
+            Status: 'matched',
+          }));
           
           console.log(`[Sync] Phase 2: Sending ${lineItemUpdates.length} line item updates`);
           console.log(`[Sync] Phase 2: Sample update:`, JSON.stringify(lineItemUpdates[0]));
