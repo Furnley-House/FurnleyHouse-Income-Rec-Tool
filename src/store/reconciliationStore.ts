@@ -5,6 +5,7 @@ import { syncMatchConfirmationToCache } from '@/hooks/useCacheSync';
 interface ReconciliationStore {
   isLoadingData: boolean;
   dataError: string | null;
+  isSavingMatches: boolean;
   
   // Data
   payments: Payment[];
@@ -43,6 +44,7 @@ interface ReconciliationStore {
   importData: (payments: Payment[], expectations: Expectation[]) => void;
   setZohoData: (payments: Payment[], expectations: Expectation[]) => void;
   setLoadingState: (isLoading: boolean, error?: string | null) => void;
+  setSavingMatches: (isSaving: boolean) => void;
   
   // Derived getters
   getSelectedPayment: () => Payment | null;
@@ -104,6 +106,7 @@ const calculateStatistics = (payments: Payment[], expectations: Expectation[], m
 export const useReconciliationStore = create<ReconciliationStore>((set, get) => ({
   isLoadingData: false,
   dataError: null,
+  isSavingMatches: false,
   
   // Initialize empty - will be populated from Zoho
   payments: [],
@@ -626,6 +629,10 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
   
   setLoadingState: (isLoading, error = null) => {
     set({ isLoadingData: isLoading, dataError: error });
+  },
+  
+  setSavingMatches: (isSaving) => {
+    set({ isSavingMatches: isSaving });
   },
   
   getSelectedPayment: () => {
