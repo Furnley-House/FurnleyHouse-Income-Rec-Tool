@@ -83,7 +83,6 @@ export function useZohoSync() {
               recordId: matchData.lineItemZohoId,
               data: {
                 Status: 'matched',
-                Matched_Expectation: matchData.expectationZohoId,
                 Match_Notes: matchData.notes || null,
               }
             }
