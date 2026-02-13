@@ -276,14 +276,20 @@ export function SessionHeader() {
         toast.info('Updating line item and expectation statuses in Zoho...');
         
         try {
-          // Update Bank_Payment_Lines: set status to 'matched'
-          // Note: Matched_Expectation lookup is omitted — its jsonarray format
-          // was causing INVALID_DATA errors that blocked the entire record update
-          // including the critical Status field.
-          const lineItemUpdates = syncedMatches.map(m => ({
-            id: m.lineItemZohoId,
-            Status: 'matched',
-          }));
+          // Update Bank_Payment_Lines: set status to 'matched' and link expectation
+          // Matched_Expectation is a mandatory multi-select lookup field requiring
+          // jsonarray format: [{id: "zohoId"}]
+          const lineItemUpdates = syncedMatches.map(m => {
+            const update: { id: string; [key: string]: unknown } = {
+              id: m.lineItemZohoId,
+              Status: 'matched',
+            };
+            // Include Matched_Expectation as jsonarray (Zoho multi-select lookup format)
+            if (m.expectationZohoId) {
+              update.Matched_Expectation = [{ id: m.expectationZohoId }];
+            }
+            return update;
+          });
           
           let lineResult = { successCount: 0, failedCount: 0 };
           if (lineItemUpdates.length > 0) {
