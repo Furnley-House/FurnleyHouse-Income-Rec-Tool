@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CachedPayment {
+  id               String   @id
+  providerName     String   @map("provider_name")
+  amount           Decimal  @default(0)
+  reconciledAmount Decimal  @default(0) @map("reconciled_amount")
+  remainingAmount  Decimal  @default(0) @map("remaining_amount")
+  paymentDate      DateTime? @map("payment_date") @db.Date
+  paymentReference String?  @map("payment_reference")
+  periodStart      DateTime? @map("period_start") @db.Date
+  periodEnd        DateTime? @map("period_end") @db.Date
+  status           String   @default("unreconciled")
+  notes            String?
+  zohoRecordId     String?  @map("zoho_record_id")
+  cachedAt         DateTime @default(now()) @map("cached_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  lineItems CachedLineItem[]
+
+  @@map("cached_payments")
+}
+
+model CachedLineItem {
+  id                   String   @id
+  paymentId            String   @map("payment_id")
+  amount               Decimal  @default(0)
+  clientName           String?  @map("client_name")
+  planReference        String?  @map("plan_reference")
+  feeCategory          String?  @map("fee_category")
+  adviserName          String?  @map("adviser_name")
+  status               String   @default("unmatched")
+  matchedExpectationId String?  @map("matched_expectation_id")
+  matchNotes           String?  @map("match_notes")
+  reasonCode           String?  @map("reason_code")
+  zohoRecordId         String?  @map("zoho_record_id")
+  cachedAt             DateTime @default(now()) @map("cached_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  payment CachedPayment @relation(fields: [paymentId], references: [id])
+
+  @@map("cached_line_items")
+}
+
+model CachedExpectation {
+  id              String   @id
+  providerName    String   @map("provider_name")
+  expectedAmount  Decimal  @default(0) @map("expected_amount")
+  allocatedAmount Decimal  @default(0) @map("allocated_amount")
+  remainingAmount Decimal  @default(0) @map("remaining_amount")
+  clientName      String?  @map("client_name")
+  planReference   String?  @map("plan_reference")
+  feeCategory     String?  @map("fee_category")
+  adviserName     String?  @map("adviser_name")
+  calculationDate DateTime? @map("calculation_date") @db.Date
+  status          String   @default("unmatched")
+  zohoRecordId    String?  @map("zoho_record_id")
+  cachedAt        DateTime @default(now()) @map("cached_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("cached_expectations")
+}
+
+model PendingMatch {
+  id                 String   @id @default(uuid())
+  paymentId          String   @map("payment_id")
+  lineItemId         String   @map("line_item_id")
+  expectationId      String   @map("expectation_id")
+  matchedAmount      Decimal  @map("matched_amount")
+  variance           Decimal  @default(0)
+  variancePercentage Decimal  @default(0) @map("variance_percentage")
+  matchQuality       String?  @map("match_quality")
+  notes              String?
+  syncedToZoho       Boolean  @default(false) @map("synced_to_zoho")
+  syncedAt           DateTime? @map("synced_at")
+  matchedAt          DateTime @default(now()) @map("matched_at")
+
+  @@map("pending_matches")
+}
+
+model SyncStatus {
+  id                String   @id @default("current")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  lastDownloadAt    DateTime? @map("last_download_at")
+  pendingMatchCount Int      @default(0) @map("pending_match_count")
+  isLocked          Boolean  @default(false) @map("is_locked")
+  lockReason        String?  @map("lock_reason")
+
+  @@map("sync_status")
+}
+
+model ZohoTokenCache {
+  id          String   @id @default("default")
+  accessToken String   @map("access_token")
+  expiresAt   DateTime @map("expires_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("zoho_token_cache")
+}
