@@ -1,8 +1,8 @@
-import { supabase } from '@/integrations/supabase/client';
+import { cacheApi } from '@/lib/api';
 
 /**
  * Standalone cache sync utilities (no hooks, pure async functions).
- * Used by the zustand store to persist match confirmations to the Supabase cache.
+ * Used by the zustand store to persist match confirmations to the Node.js cache API.
  */
 
 export async function syncLineItemStatusToCache(
@@ -11,17 +11,14 @@ export async function syncLineItemStatusToCache(
   matchedExpectationId?: string,
   matchNotes?: string
 ): Promise<void> {
-  const { error } = await supabase
-    .from('cached_line_items')
-    .update({
+  try {
+    await cacheApi.updateLineItem(lineItemId, {
       status,
       matched_expectation_id: matchedExpectationId || null,
       match_notes: matchNotes || null,
-    })
-    .eq('id', lineItemId);
-
-  if (error) {
-    console.warn('[CacheSync] Failed to update line item:', lineItemId, error.message);
+    });
+  } catch (err: any) {
+    console.warn('[CacheSync] Failed to update line item:', lineItemId, err?.message);
   }
 }
 
@@ -31,17 +28,14 @@ export async function syncExpectationStatusToCache(
   allocatedAmount: number,
   remainingAmount: number
 ): Promise<void> {
-  const { error } = await supabase
-    .from('cached_expectations')
-    .update({
+  try {
+    await cacheApi.updateExpectation(expectationId, {
       status,
       allocated_amount: allocatedAmount,
       remaining_amount: remainingAmount,
-    })
-    .eq('id', expectationId);
-
-  if (error) {
-    console.warn('[CacheSync] Failed to update expectation:', expectationId, error.message);
+    });
+  } catch (err: any) {
+    console.warn('[CacheSync] Failed to update expectation:', expectationId, err?.message);
   }
 }
 
@@ -51,17 +45,14 @@ export async function syncPaymentStatusToCache(
   reconciledAmount: number,
   remainingAmount: number
 ): Promise<void> {
-  const { error } = await supabase
-    .from('cached_payments')
-    .update({
+  try {
+    await cacheApi.updatePayment(paymentId, {
       status,
       reconciled_amount: reconciledAmount,
       remaining_amount: remainingAmount,
-    })
-    .eq('id', paymentId);
-
-  if (error) {
-    console.warn('[CacheSync] Failed to update payment:', paymentId, error.message);
+    });
+  } catch (err: any) {
+    console.warn('[CacheSync] Failed to update payment:', paymentId, err?.message);
   }
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { cacheApi } from '@/lib/api';
 
 interface SyncStatus {
   lastDownloadAt: string | null;
@@ -29,22 +29,17 @@ export function useSyncStatus(): UseSyncStatusReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
-        .from('sync_status')
-        .select('*')
-        .eq('id', 'current')
-        .single();
+      const resp = await cacheApi.getSyncStatus();
+      const data = resp.data || resp;
 
-      if (fetchError) {
-        throw new Error(fetchError.message);
-      }
+      if (!data) throw new Error('No sync status data returned');
 
       setSyncStatus({
-        lastDownloadAt: data.last_download_at,
-        lastSyncAt: data.last_sync_at,
-        pendingMatchCount: data.pending_match_count,
-        isLocked: data.is_locked,
-        lockReason: data.lock_reason,
+        lastDownloadAt: data.lastDownloadAt ?? data.last_download_at,
+        lastSyncAt: data.lastSyncAt ?? data.last_sync_at,
+        pendingMatchCount: data.pendingMatchCount ?? data.pending_match_count ?? 0,
+        isLocked: data.isLocked ?? data.is_locked ?? false,
+        lockReason: data.lockReason ?? data.lock_reason ?? null,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch sync status';
@@ -57,15 +52,7 @@ export function useSyncStatus(): UseSyncStatusReturn {
 
   const lockForDownload = useCallback(async (): Promise<boolean> => {
     try {
-      const { error: updateError } = await supabase
-        .from('sync_status')
-        .update({
-          is_locked: true,
-          lock_reason: 'Downloading data from Zoho',
-        })
-        .eq('id', 'current');
-
-      if (updateError) throw new Error(updateError.message);
+      await cacheApi.updateSyncStatus({ isLocked: true, lockReason: 'Downloading data from Zoho' });
       await refresh();
       return true;
     } catch (err) {
@@ -76,15 +63,7 @@ export function useSyncStatus(): UseSyncStatusReturn {
 
   const unlockAfterSync = useCallback(async (): Promise<boolean> => {
     try {
-      const { error: updateError } = await supabase
-        .from('sync_status')
-        .update({
-          is_locked: false,
-          lock_reason: null,
-        })
-        .eq('id', 'current');
-
-      if (updateError) throw new Error(updateError.message);
+      await cacheApi.updateSyncStatus({ isLocked: false, lockReason: null });
       await refresh();
       return true;
     } catch (err) {
@@ -95,16 +74,11 @@ export function useSyncStatus(): UseSyncStatusReturn {
 
   const updateLastDownload = useCallback(async (): Promise<boolean> => {
     try {
-      const { error: updateError } = await supabase
-        .from('sync_status')
-        .update({
-          last_download_at: new Date().toISOString(),
-          is_locked: false,
-          lock_reason: null,
-        })
-        .eq('id', 'current');
-
-      if (updateError) throw new Error(updateError.message);
+      await cacheApi.updateSyncStatus({
+        lastDownloadAt: new Date().toISOString(),
+        isLocked: false,
+        lockReason: null,
+      });
       await refresh();
       return true;
     } catch (err) {
@@ -115,14 +89,7 @@ export function useSyncStatus(): UseSyncStatusReturn {
 
   const updateLastSync = useCallback(async (): Promise<boolean> => {
     try {
-      const { error: updateError } = await supabase
-        .from('sync_status')
-        .update({
-          last_sync_at: new Date().toISOString(),
-        })
-        .eq('id', 'current');
-
-      if (updateError) throw new Error(updateError.message);
+      await cacheApi.updateSyncStatus({ lastSyncAt: new Date().toISOString() });
       await refresh();
       return true;
     } catch (err) {

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { callZoho } from '@/lib/api';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -145,21 +145,16 @@ export function CSVMapperPage() {
         Adviser_Name: resolveFieldValue(row, 'adviser_name') || '',
       }));
 
-      const res = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'createPaymentWithLineItems',
-          params: {
-            payment: {
-              Payment_Reference: paymentHeader.paymentReference,
-              Bank_Reference: paymentHeader.paymentReference,
-              Payment_Date: paymentHeader.paymentDate,
-              Amount: paymentHeader.paymentAmount || lineItems.reduce((s, li) => s + li.Amount, 0),
-              Payment_Provider: paymentHeader.providerId || undefined,
-              Notes: paymentHeader.notes || '',
-            },
-            lineItems,
-          },
+      const res = await callZoho('createPaymentWithLineItems', {
+        payment: {
+          Payment_Reference: paymentHeader.paymentReference,
+          Bank_Reference: paymentHeader.paymentReference,
+          Payment_Date: paymentHeader.paymentDate,
+          Amount: paymentHeader.paymentAmount || lineItems.reduce((s, li) => s + li.Amount, 0),
+          Payment_Provider: paymentHeader.providerId || undefined,
+          Notes: paymentHeader.notes || '',
         },
+        lineItems,
       });
 
       if (res.error) throw new Error(res.error.message);

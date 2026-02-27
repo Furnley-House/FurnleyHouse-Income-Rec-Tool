@@ -61,8 +61,12 @@ export function SessionHeader() {
   // Load pending match count on mount and when matches change
   useEffect(() => {
     const loadPendingCount = async () => {
-      const pending = await getPendingMatches();
-      setPendingCount(pending?.length || 0);
+      try {
+        const pending = await getPendingMatches();
+        setPendingCount(pending?.length || 0);
+      } catch {
+        // Backend unavailable — silently skip, don't spam console
+      }
     };
     loadPendingCount();
     

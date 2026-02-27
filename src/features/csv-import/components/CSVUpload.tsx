@@ -54,7 +54,7 @@ export function CSVUpload({
       throw new Error('CSV file is empty');
     }
     
-    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').replace(/\s+/g, ' ').trim());
     const rows: Record<string, string>[] = [];
     
     for (let i = 1; i < lines.length; i++) {

@@ -1,3 +1,5 @@
+//backend/src/lib/zohoApi.ts
+
 import { getAccessToken, ZohoRateLimitError } from './zohoAuth';
 
 /**
@@ -96,9 +98,11 @@ export async function fetchAllRecords(module: string, params: Record<string, str
     const res = await fetch(`${API_DOMAIN}/crm/v6/${module}?${qp}`, {
       headers: { Authorization: `Zoho-oauthtoken ${token}` },
     });
+    if (res.status === 204) break;
     if (res.status === 429) throw new ZohoRateLimitError('Rate limited', 60);
-
-    const data = await res.json() as any;
+    const text = await res.text();
+    if (!text) break;
+    const data = JSON.parse(text) as any;
     if (data.code === 'NODATA') break;
     if (data.status === 'error') throw new Error(`Zoho API error: ${data.message || data.code}`);
 

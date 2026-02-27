@@ -21,7 +21,7 @@ import { ArrowRight, Building2, Calendar as CalendarIcon, Check, ChevronsUpDown,
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { PaymentHeaderInputs } from '../../types';
-import { supabase } from '@/integrations/supabase/client';
+import { callZoho } from '@/lib/api';
 
 interface PaymentDetailsStepProps {
   onComplete: (inputs: PaymentHeaderInputs) => void;
@@ -34,15 +34,6 @@ interface ZohoProviderOption {
   group?: string;   // Provider_Group for hierarchy
 }
 
-// Fallback providers in case Zoho fetch fails
-const FALLBACK_PROVIDERS: ZohoProviderOption[] = [
-  { id: '', name: 'Fundment' },
-  { id: '', name: 'Aviva' },
-  { id: '', name: 'Standard Life' },
-  { id: '', name: 'Aegon' },
-  { id: '', name: 'Quilter' },
-  { id: '', name: 'Other' },
-];
 
 export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetailsStepProps) {
   const [providerOpen, setProviderOpen] = useState(false);
@@ -56,17 +47,15 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
   const [paymentAmount, setPaymentAmount] = useState(initialValues?.paymentAmount?.toString() || '');
   const [notes, setNotes] = useState(initialValues?.notes || '');
   
-  // Dynamic provider list from Zoho
-  const [providers, setProviders] = useState<ZohoProviderOption[]>(FALLBACK_PROVIDERS);
+  // Dynamic provider list from Zoho (no hardcoded fallback)
+  const [providers, setProviders] = useState<ZohoProviderOption[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
+  const [providersError, setProvidersError] = useState(false);
 
-  // Fetch providers from Zoho on mount
   useEffect(() => {
     async function fetchProviders() {
       try {
-        const res = await supabase.functions.invoke('zoho-crm', {
-          body: { action: 'getProviders' },
-        });
+        const res = await callZoho('getProviders');
         if (res.data?.success && Array.isArray(res.data.data)) {
           const zohoProviders: ZohoProviderOption[] = res.data.data
             .filter((p: any) => p.Name)
@@ -75,16 +64,16 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
               name: p.Name,
               group: p.Provider_Group || undefined,
             }));
-          
-          if (zohoProviders.length > 0) {
-            // Add "Other" option at the end
-            zohoProviders.push({ id: '', name: 'Other' });
-            setProviders(zohoProviders);
-            console.log(`[Providers] Loaded ${zohoProviders.length - 1} providers from Zoho`);
-          }
+          // Always add "Other" at the end
+          zohoProviders.push({ id: '', name: 'Other' });
+          setProviders(zohoProviders);
+          console.log(`[Providers] Loaded ${zohoProviders.length - 1} providers from Zoho`);
+        } else {
+          setProvidersError(true);
         }
       } catch (err) {
-        console.warn('[Providers] Failed to fetch from Zoho, using fallback list:', err);
+        console.warn('[Providers] Failed to fetch from Zoho:', err);
+        setProvidersError(true);
       } finally {
         setLoadingProviders(false);
       }
@@ -153,7 +142,11 @@ export function PaymentDetailsStep({ onComplete, initialValues }: PaymentDetails
                 <Command>
                   <CommandInput placeholder="Search providers..." />
                   <CommandList>
-                    <CommandEmpty>No provider found.</CommandEmpty>
+                    <CommandEmpty>
+                      {providersError
+                        ? 'No providers found in Zoho CRM. Please add providers to the Zoho Providers module.'
+                        : 'No provider found.'}
+                    </CommandEmpty>
                     <CommandGroup>
                       {providers.map((provider) => (
                         <CommandItem
