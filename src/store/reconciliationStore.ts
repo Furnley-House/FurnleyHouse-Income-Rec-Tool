@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Payment, PaymentLineItem, Expectation, Match, PendingMatch, ReconciliationStatistics, PaymentFilters, ExpectationFilters } from '@/types/reconciliation';
 import { syncMatchConfirmationToCache } from '@/hooks/useCacheSync';
+import { cacheApi } from '@/lib/api';
 
 interface ReconciliationStore {
   isLoadingData: boolean;
@@ -408,40 +409,26 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
       statistics: calculateStatistics(updatedPayments, expectations, matches)
     });
 
-    // Persist to cache and create pending_match for Zoho sync (same as Data Check approvals)
+    // Persist to cache and create pending_match for Zoho sync
     const rc = reasonCode || 'Upload Error';
     const li = payment.lineItems.find(l => l.id === lineItemId);
-    import('@/integrations/supabase/client').then(({ supabase }) => {
-      supabase
-        .from('cached_line_items')
-        .update({ 
-          reason_code: rc, 
-          status: 'approved_unmatched', 
-          match_notes: notes 
-        })
-        .eq('id', lineItemId)
-        .then(({ error }) => {
-          if (error) console.warn('[Skip] Failed to update cached line item', lineItemId, error.message);
-        });
+    cacheApi.updateLineItem(lineItemId, {
+      reason_code: rc,
+      status: 'approved_unmatched',
+      match_notes: notes,
+    }).catch(err => console.warn('[Skip] Failed to update cached line item', lineItemId, err?.message));
 
-      supabase
-        .from('pending_matches')
-        .insert({
-          payment_id: selectedPaymentId,
-          line_item_id: lineItemId,
-          expectation_id: 'DATA_CHECK_NO_EXPECTATION',
-          matched_amount: li?.amount || 0,
-          variance: 0,
-          variance_percentage: 0,
-          match_quality: 'data-check',
-          notes: `${rc}: ${notes}`,
-          synced_to_zoho: false,
-        })
-        .then(({ error }) => {
-          if (error) console.warn('[Skip] Failed to insert pending match', error.message);
-          else console.log('[Skip] Created pending match for sync');
-        });
-    });
+    cacheApi.createPendingMatch({
+      payment_id: selectedPaymentId,
+      line_item_id: lineItemId,
+      expectation_id: 'DATA_CHECK_NO_EXPECTATION',
+      matched_amount: li?.amount || 0,
+      variance: 0,
+      variance_percentage: 0,
+      match_quality: 'data-check',
+      notes: `${rc}: ${notes}`,
+      synced_to_zoho: false,
+    }).catch(err => console.warn('[Skip] Failed to insert pending match', err?.message));
   },
 
   bulkMarkDataCheckApproved: (lineItemIds: string[], reasonCode: string, notes: string) => {
@@ -481,51 +468,38 @@ export const useReconciliationStore = create<ReconciliationStore>((set, get) => 
     });
 
     // Persist to cache: update line items AND create pending_matches for sync
-    import('@/integrations/supabase/client').then(({ supabase }) => {
-      // Update line item statuses in cache
-      lineItemIds.forEach(id => {
-        supabase
-          .from('cached_line_items')
-          .update({ 
-            reason_code: reasonCode, 
-            status: 'approved_unmatched', 
-            match_notes: notes 
-          })
-          .eq('id', id)
-          .then(({ error }) => {
-            if (error) console.warn('[DataCheck] Failed to update cached line item', id, error.message);
-          });
-      });
-
-      // Create pending_matches records for each approved item (for Zoho sync)
-      const matchedLineItems = lineItemIds.map(id => {
-        const li = payment.lineItems.find(l => l.id === id);
-        return {
-          payment_id: selectedPaymentId,
-          line_item_id: id,
-          expectation_id: 'DATA_CHECK_NO_EXPECTATION', // Placeholder - no real expectation
-          matched_amount: li?.amount || 0,
-          variance: 0,
-          variance_percentage: 0,
-          match_quality: 'data-check',
-          notes: `${reasonCode}: ${notes}`,
-          synced_to_zoho: false,
-        };
-      });
-
-      // Insert in chunks of 100
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < matchedLineItems.length; i += CHUNK_SIZE) {
-        const chunk = matchedLineItems.slice(i, i + CHUNK_SIZE);
-        supabase
-          .from('pending_matches')
-          .insert(chunk)
-          .then(({ error }) => {
-            if (error) console.warn('[DataCheck] Failed to insert pending matches batch', error.message);
-            else console.log(`[DataCheck] Inserted ${chunk.length} pending matches for sync`);
-          });
-      }
+    // Update line item statuses in cache
+    lineItemIds.forEach(id => {
+      cacheApi.updateLineItem(id, {
+        reason_code: reasonCode,
+        status: 'approved_unmatched',
+        match_notes: notes,
+      }).catch(err => console.warn('[DataCheck] Failed to update cached line item', id, err?.message));
     });
+
+    // Create pending_matches records for each approved item (for Zoho sync)
+    const matchedLineItems = lineItemIds.map(id => {
+      const li = payment.lineItems.find(l => l.id === id);
+      return {
+        payment_id: selectedPaymentId,
+        line_item_id: id,
+        expectation_id: 'DATA_CHECK_NO_EXPECTATION',
+        matched_amount: li?.amount || 0,
+        variance: 0,
+        variance_percentage: 0,
+        match_quality: 'data-check',
+        notes: `${reasonCode}: ${notes}`,
+        synced_to_zoho: false,
+      };
+    });
+
+    // Insert in chunks of 100
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < matchedLineItems.length; i += CHUNK_SIZE) {
+      const chunk = matchedLineItems.slice(i, i + CHUNK_SIZE);
+      cacheApi.bulkUpsertPendingMatches(chunk)
+        .catch(err => console.warn('[DataCheck] Failed to insert pending matches batch', err?.message));
+    }
   },
   
   markPaymentFullyReconciled: (notes: string) => {

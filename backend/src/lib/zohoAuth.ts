@@ -1,3 +1,5 @@
+//backend/src/lib/zohoAuth.ts
+
 import { prisma } from './db';
 
 /**
@@ -40,7 +42,7 @@ export async function getAccessToken(): Promise<string> {
       if (cached && new Date(cached.expiresAt).getTime() > now + 300_000) {
         cachedAccessToken = cached.accessToken;
         tokenExpiresAt = new Date(cached.expiresAt).getTime();
-        return cachedAccessToken;
+        return cachedAccessToken!;
       }
     } catch (err) {
       console.warn('DB token cache read failed:', err);
@@ -116,7 +118,7 @@ export async function getAccessToken(): Promise<string> {
   })();
 
   try {
-    return await refreshInFlight;
+    return await refreshInFlight!;
   } finally {
     refreshInFlight = null;
   }

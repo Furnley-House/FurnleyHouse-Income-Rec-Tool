@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { callZoho } from '@/lib/api';
 import { toast } from "sonner";
 
 interface MatchSyncData {
@@ -35,22 +35,17 @@ export function useZohoSync() {
 
     try {
       // 1. Create the match record in Payment_Matches (the critical operation)
-      const { data: matchResult, error: matchError } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'createMatch',
-          params: {
-            paymentId: matchData.paymentZohoId,
-            lineItemId: matchData.lineItemZohoId,
-            expectationId: matchData.expectationZohoId,
-            matchedAmount: matchData.matchedAmount,
-            variance: matchData.variance,
-            variancePercentage: matchData.variancePercentage,
-            matchType: matchData.matchType,
-            matchMethod: matchData.matchMethod,
-            matchQuality: matchData.matchQuality,
-            notes: matchData.notes,
-          }
-        }
+      const { data: matchResult, error: matchError } = await callZoho('createMatch', {
+        paymentId: matchData.paymentZohoId,
+        lineItemId: matchData.lineItemZohoId,
+        expectationId: matchData.expectationZohoId,
+        matchedAmount: matchData.matchedAmount,
+        variance: matchData.variance,
+        variancePercentage: matchData.variancePercentage,
+        matchType: matchData.matchType,
+        matchMethod: matchData.matchMethod,
+        matchQuality: matchData.matchQuality,
+        notes: matchData.notes,
       });
 
       if (matchError) {
@@ -75,18 +70,10 @@ export function useZohoSync() {
       // Skip secondary updates during batch sync to reduce API calls and avoid rate limits
       if (!skipSecondaryUpdates) {
         // 2. Update the line item status in Bank_Payment_Lines
-        const { data: lineItemResult, error: lineItemError } = await supabase.functions.invoke('zoho-crm', {
-          body: {
-            action: 'updateRecord',
-            params: {
-              module: 'Bank_Payment_Lines',
-              recordId: matchData.lineItemZohoId,
-              data: {
-                Status: 'matched',
-                Match_Notes: matchData.notes || null,
-              }
-            }
-          }
+        const { data: lineItemResult, error: lineItemError } = await callZoho('updateRecord', {
+          module: 'Bank_Payment_Lines',
+          recordId: matchData.lineItemZohoId,
+          data: { Status: 'matched', Match_Notes: matchData.notes || null },
         });
 
         if (lineItemError) {
@@ -96,19 +83,10 @@ export function useZohoSync() {
         }
 
         // 3. Update the expectation status
-        const { data: expectationResult, error: expectationError } = await supabase.functions.invoke('zoho-crm', {
-          body: {
-            action: 'updateRecord',
-            params: {
-              module: 'Expectations',
-              recordId: matchData.expectationZohoId,
-              data: {
-                Status: 'matched',
-                Allocated_Amount: matchData.matchedAmount,
-                Remaining_Amount: 0,
-              }
-            }
-          }
+        const { data: expectationResult, error: expectationError } = await callZoho('updateRecord', {
+          module: 'Expectations',
+          recordId: matchData.expectationZohoId,
+          data: { Status: 'matched', Allocated_Amount: matchData.matchedAmount, Remaining_Amount: 0 },
         });
 
         if (expectationError) {
@@ -147,25 +125,20 @@ export function useZohoSync() {
   ): Promise<{ successCount: number; failedCount: number; results: Array<{ index: number; status: string }> }> => {
     console.log(`[ZohoSync] Batch syncing ${matches.length} matches`);
 
-    const { data, error } = await supabase.functions.invoke('zoho-crm', {
-      body: {
-        action: 'createMatchBatch',
-        params: {
-          records: matches.map(m => ({
-            paymentId: m.paymentZohoId,
-            lineItemId: m.lineItemZohoId,
-            expectationId: m.expectationZohoId || null, // null for data-check matches
-            matchedAmount: m.matchedAmount,
-            variance: m.variance,
-            variancePercentage: m.variancePercentage,
-            matchType: m.matchType,
-            matchMethod: m.matchMethod,
-            matchQuality: m.matchQuality,
-            notes: m.notes,
-            reasonCode: m.reasonCode || null, // For data-check matches
-          })),
-        },
-      },
+    const { data, error } = await callZoho('createMatchBatch', {
+      records: matches.map(m => ({
+        paymentId: m.paymentZohoId,
+        lineItemId: m.lineItemZohoId,
+        expectationId: m.expectationZohoId || null,
+        matchedAmount: m.matchedAmount,
+        variance: m.variance,
+        variancePercentage: m.variancePercentage,
+        matchType: m.matchType,
+        matchMethod: m.matchMethod,
+        matchQuality: m.matchQuality,
+        notes: m.notes,
+        reasonCode: m.reasonCode || null,
+      })),
     });
 
     if (error) {
@@ -246,15 +219,10 @@ export function useZohoSync() {
         updateData.Notes = notes;
       }
 
-      const { data, error } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'updateRecord',
-          params: {
-            module: 'Bank_Payments',
-            recordId: paymentZohoId,
-            data: updateData,
-          }
-        }
+      const { data, error } = await callZoho('updateRecord', {
+        module: 'Bank_Payments',
+        recordId: paymentZohoId,
+        data: updateData,
       });
 
       if (error) {
@@ -277,20 +245,15 @@ export function useZohoSync() {
     console.log('[ZohoSync] Syncing invalidation to Zoho:', data);
 
     try {
-      const { data: result, error } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'updateRecord',
-          params: {
-            module: 'Expectations',
-            recordId: data.expectationZohoId,
-            data: {
-              Status: 'invalidated',
-              Invalidated_At: new Date().toISOString(),
-              Invalidated_By: 'Reconciliation Tool',
-              Invalidation_Reason: data.reason,
-            }
-          }
-        }
+      const { data: result, error } = await callZoho('updateRecord', {
+        module: 'Expectations',
+        recordId: data.expectationZohoId,
+        data: {
+          Status: 'invalidated',
+          Invalidated_At: new Date().toISOString(),
+          Invalidated_By: 'Reconciliation Tool',
+          Invalidation_Reason: data.reason,
+        },
       });
 
       if (error) {
@@ -339,12 +302,7 @@ export function useZohoSync() {
 
       console.log(`[ZohoSync] Sending batch ${Math.floor(i / BATCH_SIZE) + 1} with ${chunk.length} records to ${module}`);
 
-      const { data, error } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'updateRecordsBatch',
-          params: { module, records: chunk },
-        },
-      });
+      const { data, error } = await callZoho('updateRecordsBatch', { module, records: chunk });
 
       if (error) {
         console.error(`[ZohoSync] Edge function error for ${module}:`, error);

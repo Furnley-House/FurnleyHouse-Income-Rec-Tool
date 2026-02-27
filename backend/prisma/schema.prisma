@@ -8,90 +8,92 @@ datasource db {
 }
 
 model CachedPayment {
-  id               String   @id
-  providerName     String   @map("provider_name")
-  amount           Decimal  @default(0)
-  reconciledAmount Decimal  @default(0) @map("reconciled_amount")
-  remainingAmount  Decimal  @default(0) @map("remaining_amount")
-  paymentDate      DateTime? @map("payment_date") @db.Date
-  paymentReference String?  @map("payment_reference")
-  periodStart      DateTime? @map("period_start") @db.Date
-  periodEnd        DateTime? @map("period_end") @db.Date
-  status           String   @default("unreconciled")
+  id               String           @id
+  providerName     String           @map("provider_name")
+  paymentReference String?          @map("payment_reference")
+  amount           Decimal          @default(0) @db.Decimal(12, 2)
+  paymentDate      DateTime?        @map("payment_date") @db.Date
+  periodStart      DateTime?        @map("period_start") @db.Date
+  periodEnd        DateTime?        @map("period_end") @db.Date
+  status           String           @default("unreconciled")
+  reconciledAmount Decimal          @default(0) @map("reconciled_amount") @db.Decimal(12, 2)
+  remainingAmount  Decimal          @default(0) @map("remaining_amount") @db.Decimal(12, 2)
   notes            String?
-  zohoRecordId     String?  @map("zoho_record_id")
-  cachedAt         DateTime @default(now()) @map("cached_at")
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
-
-  lineItems CachedLineItem[]
+  zohoRecordId     String?          @map("zoho_record_id")
+  cachedAt         DateTime         @default(now()) @map("cached_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lineItems        CachedLineItem[]
+  pending_matches  PendingMatch[]
 
   @@map("cached_payments")
 }
 
 model CachedLineItem {
-  id                   String   @id
-  paymentId            String   @map("payment_id")
-  amount               Decimal  @default(0)
-  clientName           String?  @map("client_name")
-  planReference        String?  @map("plan_reference")
-  feeCategory          String?  @map("fee_category")
-  adviserName          String?  @map("adviser_name")
-  status               String   @default("unmatched")
-  matchedExpectationId String?  @map("matched_expectation_id")
-  matchNotes           String?  @map("match_notes")
-  reasonCode           String?  @map("reason_code")
-  zohoRecordId         String?  @map("zoho_record_id")
-  cachedAt             DateTime @default(now()) @map("cached_at")
-  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
-
-  payment CachedPayment @relation(fields: [paymentId], references: [id])
+  id                   String         @id
+  paymentId            String         @map("payment_id")
+  clientName           String?        @map("client_name")
+  planReference        String?        @map("plan_reference")
+  adviserName          String?        @map("adviser_name")
+  amount               Decimal        @default(0) @db.Decimal(12, 2)
+  feeCategory          String?        @map("fee_category")
+  status               String         @default("unmatched")
+  matchedExpectationId String?        @map("matched_expectation_id")
+  matchNotes           String?        @map("match_notes")
+  reasonCode           String?        @map("reason_code")
+  zohoRecordId         String?        @map("zoho_record_id")
+  cachedAt             DateTime       @default(now()) @map("cached_at") @db.Timestamptz(6)
+  updatedAt            DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payment              CachedPayment  @relation(fields: [paymentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pending_matches      PendingMatch[]
 
   @@map("cached_line_items")
 }
 
 model CachedExpectation {
-  id              String   @id
-  providerName    String   @map("provider_name")
-  expectedAmount  Decimal  @default(0) @map("expected_amount")
-  allocatedAmount Decimal  @default(0) @map("allocated_amount")
-  remainingAmount Decimal  @default(0) @map("remaining_amount")
-  clientName      String?  @map("client_name")
-  planReference   String?  @map("plan_reference")
-  feeCategory     String?  @map("fee_category")
-  adviserName     String?  @map("adviser_name")
+  id              String    @id
+  providerName    String    @map("provider_name")
+  clientName      String?   @map("client_name")
+  planReference   String?   @map("plan_reference")
+  adviserName     String?   @map("adviser_name")
+  expectedAmount  Decimal   @default(0) @map("expected_amount") @db.Decimal(12, 2)
   calculationDate DateTime? @map("calculation_date") @db.Date
-  status          String   @default("unmatched")
-  zohoRecordId    String?  @map("zoho_record_id")
-  cachedAt        DateTime @default(now()) @map("cached_at")
-  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+  feeCategory     String?   @map("fee_category")
+  status          String    @default("unmatched")
+  allocatedAmount Decimal   @default(0) @map("allocated_amount") @db.Decimal(12, 2)
+  remainingAmount Decimal   @default(0) @map("remaining_amount") @db.Decimal(12, 2)
+  zohoRecordId    String?   @map("zoho_record_id")
+  cachedAt        DateTime  @default(now()) @map("cached_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("cached_expectations")
 }
 
 model PendingMatch {
-  id                 String   @id @default(uuid())
-  paymentId          String   @map("payment_id")
-  lineItemId         String   @map("line_item_id")
-  expectationId      String   @map("expectation_id")
-  matchedAmount      Decimal  @map("matched_amount")
-  variance           Decimal  @default(0)
-  variancePercentage Decimal  @default(0) @map("variance_percentage")
-  matchQuality       String?  @map("match_quality")
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId          String         @map("payment_id")
+  lineItemId         String         @map("line_item_id")
+  expectationId      String         @default("DATA_CHECK_NO_EXPECTATION") @map("expectation_id")
+  matchedAmount      Decimal        @map("matched_amount") @db.Decimal(12, 2)
+  variance           Decimal        @default(0) @db.Decimal(12, 2)
+  variancePercentage Decimal        @default(0) @map("variance_percentage") @db.Decimal(8, 4)
+  matchQuality       String?        @map("match_quality")
   notes              String?
-  syncedToZoho       Boolean  @default(false) @map("synced_to_zoho")
-  syncedAt           DateTime? @map("synced_at")
-  matchedAt          DateTime @default(now()) @map("matched_at")
+  matchedAt          DateTime       @default(now()) @map("matched_at") @db.Timestamptz(6)
+  syncedToZoho       Boolean        @default(false) @map("synced_to_zoho")
+  syncedAt           DateTime?      @map("synced_at") @db.Timestamptz(6)
+  cached_line_items  CachedLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  cached_payments    CachedPayment  @relation(fields: [paymentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("pending_matches")
 }
 
 model SyncStatus {
-  id                String   @id @default("current")
-  lastSyncAt        DateTime? @map("last_sync_at")
-  lastDownloadAt    DateTime? @map("last_download_at")
-  pendingMatchCount Int      @default(0) @map("pending_match_count")
-  isLocked          Boolean  @default(false) @map("is_locked")
-  lockReason        String?  @map("lock_reason")
+  id                String    @id @default("current")
+  lastDownloadAt    DateTime? @map("last_download_at") @db.Timestamptz(6)
+  lastSyncAt        DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  pendingMatchCount Int       @default(0) @map("pending_match_count")
+  isLocked          Boolean   @default(false) @map("is_locked")
+  lockReason        String?   @map("lock_reason")
 
   @@map("sync_status")
 }
@@ -99,8 +101,8 @@ model SyncStatus {
 model ZohoTokenCache {
   id          String   @id @default("default")
   accessToken String   @map("access_token")
-  expiresAt   DateTime @map("expires_at")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("zoho_token_cache")
 }

@@ -1,3 +1,5 @@
+//backend/src/routes/zoho.ts
+
 import { Router, Request, Response } from 'express';
 import { getAccessToken, formatZohoDateTime, ZohoRateLimitError } from '../lib/zohoAuth';
 import {
@@ -115,6 +117,22 @@ zohoRouter.post('/', async (req: Request, res: Response) => {
         result = await fetchAllRecords('Providers', {
           fields: 'Provider_ID,Name,Provider_Code,Provider_Group,Is_Payment_Source,Active',
         });
+        break;
+      }
+
+      // ---- getMatches ----
+      // [GAP 3 FIX] Added missing action — mirrors Edge Function getMatches
+      case 'getMatches': {
+        const fields = 'id,Bank_Payment_Ref_Match,Payment_Line_Match,Expectation,Matched_Amount,Variance,Variance_Percentage,Match_Type,Match_Method,Match_Quality,Notes,Matched_By,Matched_At,Confirmed';
+
+        if (params.paymentId) {
+          // Filter matches by payment ID using COQL
+          const query = `select ${fields} from Payment_Matches where Bank_Payment_Ref_Match = '${params.paymentId}'`;
+          result = await queryWithCOQL(query);
+        } else {
+          // Fetch all matches with field selection
+          result = await fetchAllRecords('Payment_Matches', { fields });
+        }
         break;
       }
 
@@ -270,32 +288,155 @@ zohoRouter.post('/', async (req: Request, res: Response) => {
       }
 
       // ---- dataCheck ----
+      // [GAP 1 FIX] Complete re-implementation matching the Edge Function.
+      // Now queries both Plans (with valuation) and Fees (with percentage checks).
       case 'dataCheck': {
-        // Simplified — same logic as edge function
         const { policyReferences } = params;
-        if (!Array.isArray(policyReferences)) throw new Error('policyReferences required');
+        if (!Array.isArray(policyReferences) || policyReferences.length === 0) {
+          throw new Error('policyReferences array is required for dataCheck');
+        }
+
+        console.log(`[Zoho] Data check for ${policyReferences.length} policy references`);
+
+        // Deduplicate
         const uniqueRefs = [...new Set(policyReferences.map((r: string) => r.trim()).filter(Boolean))];
-        const foundPlans = new Map<string, string>();
+
+        // Step 1: Query Plans module — also fetch the valuation field
+        const foundPlans = new Map<string, string>();      // policyRef -> planId
+        const planValuations = new Map<string, number>();   // policyRef -> valuation
         const BS = 50;
+
+        // Resolve the valuation field name dynamically (varies per Zoho org)
+        let valuationFieldName: string | null = null;
+        try {
+          const planModuleFields = await getModuleFields('Plans');
+          valuationFieldName = resolveFieldApiName(planModuleFields, [
+            'Valuation', 'Current_Valuation', 'Plan_Valuation', 'Total_Valuation', 'Fund_Value', 'Current_Value',
+          ]);
+          if (!valuationFieldName) {
+            console.warn('[Zoho] Could not resolve valuation field in Plans module');
+          }
+        } catch (err: any) {
+          console.warn('[Zoho] Failed to get Plans module fields for valuation:', err.message);
+        }
+
+        const selectFields = valuationFieldName
+          ? `id, Policy_Ref, ${valuationFieldName}`
+          : 'id, Policy_Ref';
 
         for (let i = 0; i < uniqueRefs.length; i += BS) {
           const batch = uniqueRefs.slice(i, i + BS);
           const inClause = batch.map((r) => `'${r.replace(/'/g, "\\'")}'`).join(', ');
+          const query = `select ${selectFields} from Plans where Policy_Ref in (${inClause})`;
+
           try {
-            const plans = await queryWithCOQL(`select id, Policy_Ref from Plans where Policy_Ref in (${inClause})`);
-            for (const p of plans) {
-              const ref = String(p.Policy_Ref || '').trim();
-              if (ref) foundPlans.set(ref, String(p.id));
+            const plans = await queryWithCOQL(query);
+            for (const plan of plans) {
+              const policyRef = String(plan.Policy_Ref || '').trim();
+              if (policyRef) {
+                foundPlans.set(policyRef, String(plan.id));
+                // Store valuation if available
+                if (valuationFieldName && plan[valuationFieldName] !== undefined) {
+                  const val = parseFloat(String(plan[valuationFieldName] || '0'));
+                  planValuations.set(policyRef, isNaN(val) ? 0 : val);
+                }
+              }
             }
-          } catch { /* skip */ }
+          } catch (err: any) {
+            console.warn('[Zoho] Plans query batch failed:', err.message);
+          }
+
           if (i + BS < uniqueRefs.length) await new Promise((r) => setTimeout(r, 500));
         }
 
-        const checkResults: Record<string, any> = {};
-        for (const ref of uniqueRefs) {
-          checkResults[ref] = { planFound: !!foundPlans.get(ref), hasFees: false, zeroValuation: false, ongoingFeeZeroPercent: false };
+        console.log(`[Zoho] Found ${foundPlans.size} plans out of ${uniqueRefs.length} policy references`);
+
+        // Step 2: For found plans, check Fees module for hasFees & ongoingFeeZeroPercent
+        const planIds = [...foundPlans.values()];
+        const plansWithFees = new Set<string>();
+        const plansWithOngoingFeeZeroPercent = new Set<string>();
+
+        if (planIds.length > 0) {
+          const feeModuleFields = await getModuleFields('Fees');
+          const planLookupField = resolveFieldApiName(feeModuleFields, [
+            'Plan', 'Plan_Name', 'Plans', 'Related_Plan', 'Plan_ID',
+          ]);
+
+          if (!planLookupField) {
+            console.warn('[Zoho] Could not resolve plan lookup field in Fees module');
+          } else {
+            // Resolve fee percentage and category fields
+            const feePercentField = resolveFieldApiName(feeModuleFields, [
+              'Fee_Percentage', 'Percentage', 'Fee_Percent', 'Ongoing_Fee_Percentage', 'Fee_%',
+            ]);
+            const feeCategoryField = resolveFieldApiName(feeModuleFields, [
+              'Fee_Category', 'Category', 'Fee_Type', 'Type',
+            ]);
+
+            const selectFeeFields = ['id', planLookupField];
+            if (feePercentField) selectFeeFields.push(feePercentField);
+            if (feeCategoryField) selectFeeFields.push(feeCategoryField);
+
+            for (let i = 0; i < planIds.length; i += BS) {
+              const batch = planIds.slice(i, i + BS);
+              const inClause = batch.map((id: string) => `'${id}'`).join(', ');
+              const query = `select ${selectFeeFields.join(', ')} from Fees where ${planLookupField} in (${inClause})`;
+
+              try {
+                const fees = await queryWithCOQL(query);
+                for (const fee of fees) {
+                  const planRef = fee[planLookupField];
+                  const planId = typeof planRef === 'object' && planRef !== null
+                    ? String((planRef as any).id || planRef)
+                    : String(planRef || '');
+                  if (planId) {
+                    plansWithFees.add(planId);
+
+                    // Check for ongoing fee with zero percentage
+                    if (feePercentField && feeCategoryField) {
+                      const category = String(fee[feeCategoryField] || '').toLowerCase();
+                      const isOngoing = category.includes('ongoing') || category.includes('recurring') || category.includes('trail');
+                      const pct = parseFloat(String(fee[feePercentField] || '0'));
+                      if (isOngoing && (isNaN(pct) || pct === 0)) {
+                        plansWithOngoingFeeZeroPercent.add(planId);
+                      }
+                    }
+                  }
+                }
+              } catch (err: any) {
+                console.warn('[Zoho] Fees query batch failed:', err.message);
+              }
+
+              if (i + BS < planIds.length) await new Promise((r) => setTimeout(r, 500));
+            }
+          }
         }
-        result = { totalChecked: uniqueRefs.length, plansFound: foundPlans.size, results: checkResults };
+
+        console.log(`[Zoho] ${plansWithFees.size} plans have fee records, ${plansWithOngoingFeeZeroPercent.size} have ongoing fee at 0%`);
+
+        // Build per-reference results
+        const checkResults: Record<string, {
+          planFound: boolean; hasFees: boolean; zeroValuation: boolean;
+          ongoingFeeZeroPercent: boolean; planId?: string;
+        }> = {};
+        for (const ref of uniqueRefs) {
+          const planId = foundPlans.get(ref);
+          const valuation = planValuations.get(ref);
+          checkResults[ref] = {
+            planFound: !!planId,
+            hasFees: planId ? plansWithFees.has(planId) : false,
+            zeroValuation: planId ? (valuation !== undefined && valuation === 0) : false,
+            ongoingFeeZeroPercent: planId ? plansWithOngoingFeeZeroPercent.has(planId) : false,
+            planId: planId || undefined,
+          };
+        }
+
+        result = {
+          totalChecked: uniqueRefs.length,
+          plansFound: foundPlans.size,
+          plansWithFees: plansWithFees.size,
+          results: checkResults,
+        };
         break;
       }
 

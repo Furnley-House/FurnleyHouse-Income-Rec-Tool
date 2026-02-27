@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callZoho } from '@/lib/api';
 import { Payment, PaymentLineItem, Expectation } from '@/types/reconciliation';
 
 export type DataSource = 'mock' | 'zoho';
@@ -116,26 +116,25 @@ export function useZohoData(): UseZohoDataReturn {
       // Helper to check for rate limit errors in response
       const checkRateLimit = (res: any, context: string) => {
         if (res.error) throw new Error(`${context}: ${res.error.message}`);
-        if (!res.data?.success) {
+        const d = res.data;
+        if (!d?.success) {
           // Check for rate limit error
-          if (res.data?.code === 'ZOHO_RATE_LIMIT') {
-            const retrySeconds = res.data?.retryAfterSeconds || 60;
+          if (d?.code === 'ZOHO_RATE_LIMIT') {
+            const retrySeconds = d?.retryAfterSeconds || 60;
             throw { 
               isRateLimit: true, 
               retryAfterSeconds: retrySeconds,
               message: `Zoho API rate limited. Please wait ${retrySeconds} seconds before retrying.`
             };
           }
-          throw new Error(`${context}: ${res.data?.error || 'Unknown error'}`);
+          throw new Error(`${context}: ${d?.error || 'Unknown error'}`);
         }
-        return res.data?.data || [];
+        return d?.data || [];
       };
 
       // 1. Fetch providers first (smallest dataset, needed for mapping)
       console.log('[Zoho] Loading providers...');
-      const providersRes = await supabase.functions.invoke('zoho-crm', { 
-        body: { action: 'getProviders' } 
-      });
+      const providersRes = await callZoho('getProviders');
       const zohoProviders: ZohoProvider[] = checkRateLimit(providersRes, 'Providers');
       console.log(`[Zoho] Loaded ${zohoProviders.length} providers`);
       
@@ -147,7 +146,7 @@ export function useZohoData(): UseZohoDataReturn {
       if (unmatchedOnly) {
         paymentsBody.params = { status: ['unreconciled', 'in_progress'] };
       }
-      const paymentsRes = await supabase.functions.invoke('zoho-crm', { body: paymentsBody });
+      const paymentsRes = await callZoho(paymentsBody.action as string, paymentsBody.params as any);
       const zohoPayments: ZohoPayment[] = checkRateLimit(paymentsRes, 'Payments');
       console.log(`[Zoho] Loaded ${zohoPayments.length} payments`);
       
@@ -159,7 +158,7 @@ export function useZohoData(): UseZohoDataReturn {
       if (unmatchedOnly) {
         lineItemsBody.params = { status: ['unmatched'] };
       }
-      const lineItemsRes = await supabase.functions.invoke('zoho-crm', { body: lineItemsBody });
+      const lineItemsRes = await callZoho(lineItemsBody.action as string, lineItemsBody.params as any);
       const zohoLineItems: ZohoLineItem[] = checkRateLimit(lineItemsRes, 'Line Items');
       console.log(`[Zoho] Loaded ${zohoLineItems.length} line items`);
       
@@ -170,35 +169,10 @@ export function useZohoData(): UseZohoDataReturn {
       console.log(`[Zoho] Loading expectations (fetching all, will filter client-side)...`);
       const expectationsBody: Record<string, unknown> = { action: 'getExpectations' };
       // Don't pass status filter - the field may be blank/null in Zoho which causes 0 results
-      const expectationsRes = await supabase.functions.invoke('zoho-crm', { body: expectationsBody });
+      const expectationsRes = await callZoho(expectationsBody.action as string, expectationsBody.params as any);
       const zohoExpectations: ZohoExpectation[] = checkRateLimit(expectationsRes, 'Expectations');
       console.log(`[Zoho] Loaded ${zohoExpectations.length} expectations (raw)`);
 
-      // DEBUG: Verify raw keys + expected amount presence
-      if (zohoExpectations[0]) {
-        console.log('[Zoho] DEBUG - Expectation record keys (first record):', Object.keys(zohoExpectations[0] as any));
-      }
-
-      const rawExpectedAmounts = zohoExpectations
-        .slice(0, 50)
-        .map(e => coerceCurrency(e.Expected_Fee_Amount))
-        .filter(n => n > 0);
-      console.log(`[Zoho] DEBUG - Non-zero Expected_Fee_Amount count in first 50 expectations: ${rawExpectedAmounts.length}`);
-
-      // Find a matching plan reference and compare amounts
-      const sampleLineItem = zohoLineItems.find(li => li.Plan_Reference && li.Plan_Reference.trim() !== '');
-      if (sampleLineItem) {
-        const matchingExp = zohoExpectations.find(e => e.Plan_Policy_Reference === sampleLineItem.Plan_Reference);
-        if (matchingExp) {
-          const liAmount = coerceCurrency(sampleLineItem.Amount);
-          const expAmount = coerceCurrency(matchingExp.Expected_Fee_Amount);
-          console.log('[Zoho] DEBUG - SAMPLE MATCH COMPARISON:');
-          console.log(`  Plan Reference: ${sampleLineItem.Plan_Reference}`);
-          console.log(`  Line Item Amount: £${liAmount.toFixed(2)}`);
-          console.log(`  Expected Fee Amount: £${expAmount.toFixed(2)}`);
-          console.log(`  Are they equal? ${Math.abs(liAmount - expAmount) < 0.005}`);
-        }
-      }
       // Build provider lookup (id -> name with group resolution)
       const providerMap = new Map<string, string>();
       zohoProviders.forEach(p => {
@@ -308,21 +282,8 @@ export function useZohoData(): UseZohoDataReturn {
       };
     });
 
-    // Count total line items across all payments
     const totalLineItems = payments.reduce((sum, p) => sum + p.lineItems.length, 0);
-    
-    // Sample provider names for debugging
-    const paymentProviders = [...new Set(payments.map(p => p.providerName))].slice(0, 10);
-    const expectationProviders = [...new Set(expectations.map(e => e.providerName))].slice(0, 10);
-    
-    console.log(`[Zoho] Loaded ${payments.length} payments with ${totalLineItems} total line items`);
-    console.log(`[Zoho] Loaded ${expectations.length} expectations`);
-    console.log(`[Zoho] Payment providers (sample):`, paymentProviders);
-    console.log(`[Zoho] Expectation providers (sample):`, expectationProviders);
-    
-    // Sample calculation dates for debugging
-    const sampleCalcDates = expectations.slice(0, 5).map(e => ({ client: e.clientName, date: e.calculationDate, provider: e.providerName }));
-    console.log(`[Zoho] Sample expectations:`, sampleCalcDates);
+    console.log(`[Zoho] Loaded ${payments.length} payments with ${totalLineItems} line items, ${expectations.length} expectations`);
 
     return { data: { payments, expectations } };
     } catch (err: any) {

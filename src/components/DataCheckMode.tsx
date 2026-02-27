@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useReconciliationStore } from '@/store/reconciliationStore';
-import { supabase } from '@/integrations/supabase/client';
+import { callZoho } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -83,12 +83,7 @@ export function DataCheckMode({ onComplete }: DataCheckModeProps) {
     setCheckError(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('zoho-crm', {
-        body: {
-          action: 'dataCheck',
-          params: { policyReferences },
-        },
-      });
+      const { data, error } = await callZoho('dataCheck', { policyReferences });
 
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error || 'Data check failed');

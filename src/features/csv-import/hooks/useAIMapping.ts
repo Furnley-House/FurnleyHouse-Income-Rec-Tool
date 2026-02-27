@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { callCsvMapping } from '@/lib/api';
 import { CSVColumn, AIMappingResult } from '../types';
 import { toast } from 'sonner';
 
@@ -21,18 +21,13 @@ export function useAIMapping(options?: UseAIMappingOptions) {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('csv-mapping-ai', {
-        body: {
-          columns,
-          providerName,
-        },
-      });
+      const { data, error: fnError } = await callCsvMapping({ columns, providerName });
 
       if (fnError) {
         throw new Error(fnError.message || 'Failed to analyze CSV');
       }
 
-      if (data.error) {
+      if (data?.error) {
         throw new Error(data.error);
       }
 
